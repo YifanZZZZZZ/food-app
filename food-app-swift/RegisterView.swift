@@ -31,7 +31,19 @@ struct RegisterView: View {
                     .ignoresSafeArea()
 
                 VStack {
-                    Spacer()
+                    Spacer(minLength: 80)
+
+                    // Subtle Tagline
+                    Text("Your AI Nutrition Assistant")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white.opacity(0.75))
+                        .padding(.bottom, 6)
+
+                    // App Name
+                    Text("Snap & Track")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.bottom, 30)
 
                     VStack(spacing: 24) {
                         Text("Create your account")
@@ -139,6 +151,7 @@ struct RegisterView: View {
 
                         // Register Button
                         Button(action: {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             validateName()
                             validateEmail()
                             validatePassword()
@@ -175,6 +188,7 @@ struct RegisterView: View {
                                 .foregroundColor(.white.opacity(0.75))
                             Button(action: {
                                 withAnimation {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     dismiss()
                                 }
                             }) {
@@ -190,7 +204,9 @@ struct RegisterView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
+            .onTapGesture {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
         }
     }
 
@@ -217,4 +233,8 @@ struct RegisterView: View {
         confirmPasswordError = trimmed.isEmpty ? "Please confirm your password" :
                                  (trimmed != password ? "Passwords do not match" : "")
     }
+}
+
+#Preview {
+    RegisterView()
 }
