@@ -1,0 +1,13 @@
+# Ignore virtual environments
+venv/
+__pycache__/
+*.pyc
+
+# Ignore environment variables
+.env
+
+# Ignore local image uploads/temp files
+*.jpg
+*.jpeg
+*.png
+uploads/
