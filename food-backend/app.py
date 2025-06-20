@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import tempfile
+import os
 from model_pipeline import full_image_analysis
 
 app = Flask(__name__)
@@ -23,4 +24,5 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050, debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)

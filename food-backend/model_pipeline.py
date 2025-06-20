@@ -6,12 +6,19 @@ import os
 import re
 from datetime import datetime
 
+from dotenv import load_dotenv
+load_dotenv()  # loads from .env into os.environ
+
+
 # Device config
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
 
 # Gemini API key
-GEN_API_KEY = "AIzaSyAJn4e-AlCoFsgFOJvuc8QA2r2zQDBeBqg"
+GEN_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEN_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not set in environment variables.")
 genai.configure(api_key=GEN_API_KEY)
+
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # ---------- Helper Functions ----------
