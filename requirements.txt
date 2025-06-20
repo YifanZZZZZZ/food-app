@@ -2,3 +2,5 @@ flask
 torch
 Pillow
 google-generativeai
+python-dotenv
+numpy
