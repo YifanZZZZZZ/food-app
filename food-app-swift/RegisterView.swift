@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,8 +16,7 @@ struct RegisterView: View {
     @State private var passwordError = ""
     @State private var confirmPasswordError = ""
 
-    @State private var showSuccess = false
-    @State private var showError = false
+    @State private var navigateToProfile = false
 
     var body: some View {
         NavigationStack {
@@ -33,24 +33,11 @@ struct RegisterView: View {
                 VStack {
                     Spacer(minLength: 80)
 
-                    // Subtle Tagline
-                    Text("Your AI Nutrition Assistant")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.75))
-                        .padding(.bottom, 6)
-
-                    // App Name
-                    Text("Snap & Track")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text("Create Your Account")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
-                        .padding(.bottom, 30)
 
-                    VStack(spacing: 24) {
-                        Text("Create your account")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-
-                        // Name
+                    VStack(spacing: 20) {
                         VStack(spacing: 4) {
                             TextField("Full Name", text: $name)
                                 .autocapitalization(.words)
@@ -60,7 +47,7 @@ struct RegisterView: View {
                                 .foregroundColor(.white)
                                 .font(.system(size: 18, weight: .semibold))
                                 .frame(width: 280)
-                                .onChange(of: name) { _ in validateName() }
+                                .onChange(of: name, initial: false) { _, _ in validateName() }
 
                             if !nameError.isEmpty {
                                 Text(nameError)
@@ -70,7 +57,6 @@ struct RegisterView: View {
                             }
                         }
 
-                        // Email
                         VStack(spacing: 4) {
                             TextField("Email", text: $email)
                                 .keyboardType(.emailAddress)
@@ -81,7 +67,7 @@ struct RegisterView: View {
                                 .foregroundColor(.white)
                                 .font(.system(size: 18, weight: .semibold))
                                 .frame(width: 280)
-                                .onChange(of: email) { _ in validateEmail() }
+                                .onChange(of: email, initial: false) { _, _ in validateEmail() }
 
                             if !emailError.isEmpty {
                                 Text(emailError)
@@ -91,7 +77,6 @@ struct RegisterView: View {
                             }
                         }
 
-                        // Password
                         VStack(spacing: 4) {
                             HStack {
                                 if isSecure {
@@ -110,7 +95,7 @@ struct RegisterView: View {
                             .foregroundColor(.white)
                             .font(.system(size: 18, weight: .semibold))
                             .frame(width: 280)
-                            .onChange(of: password) { _ in validatePassword() }
+                            .onChange(of: password, initial: false) { _, _ in validatePassword() }
 
                             if !passwordError.isEmpty {
                                 Text(passwordError)
@@ -120,7 +105,6 @@ struct RegisterView: View {
                             }
                         }
 
-                        // Confirm Password
                         VStack(spacing: 4) {
                             HStack {
                                 if isConfirmSecure {
@@ -139,7 +123,7 @@ struct RegisterView: View {
                             .foregroundColor(.white)
                             .font(.system(size: 18, weight: .semibold))
                             .frame(width: 280)
-                            .onChange(of: confirmPassword) { _ in validateConfirmPassword() }
+                            .onChange(of: confirmPassword, initial: false) { _, _ in validateConfirmPassword() }
 
                             if !confirmPasswordError.isEmpty {
                                 Text(confirmPasswordError)
@@ -149,7 +133,6 @@ struct RegisterView: View {
                             }
                         }
 
-                        // Register Button
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             validateName()
@@ -158,13 +141,7 @@ struct RegisterView: View {
                             validateConfirmPassword()
 
                             if nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty {
-                                withAnimation {
-                                    showSuccess = true
-                                }
-                            } else {
-                                withAnimation {
-                                    showError = true
-                                }
+                                navigateToProfile = true
                             }
                         }) {
                             Text("Register")
@@ -175,22 +152,12 @@ struct RegisterView: View {
                                 .background(Color.orange)
                                 .cornerRadius(14)
                         }
-                        .alert("Registration Successful!", isPresented: $showSuccess, actions: {
-                            Button("Go to Login") { dismiss() }
-                        })
-                        .alert("Please correct the errors", isPresented: $showError, actions: {
-                            Button("OK", role: .cancel) { }
-                        })
 
-                        // Already have account
                         HStack(spacing: 4) {
                             Text("Already have an account?")
                                 .foregroundColor(.white.opacity(0.75))
                             Button(action: {
-                                withAnimation {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    dismiss()
-                                }
+                                dismiss()
                             }) {
                                 Text("Login")
                                     .foregroundColor(.orange)
@@ -204,13 +171,12 @@ struct RegisterView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .onTapGesture {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            .navigationDestination(isPresented: $navigateToProfile) {
+                ProfileSetupView()
             }
         }
     }
 
-    // Validation
     private func validateName() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         nameError = trimmed.isEmpty ? "Name is required" : ""

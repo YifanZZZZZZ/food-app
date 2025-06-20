@@ -24,25 +24,21 @@ struct LoginView: View {
                 VStack {
                     Spacer(minLength: 80)
 
-                    // Subtle Tagline
                     Text("Your AI Nutrition Assistant")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white.opacity(0.75))
                         .padding(.bottom, 6)
 
-                    // App Name
                     Text("Snap & Track")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .padding(.bottom, 30)
 
-                    // Login Form
                     VStack(spacing: 24) {
                         Text("Welcome Back")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
 
-                        // Email
                         VStack(spacing: 4) {
                             TextField("Email", text: $email)
                                 .keyboardType(.emailAddress)
@@ -53,7 +49,7 @@ struct LoginView: View {
                                 .foregroundColor(.white)
                                 .font(.system(size: 18, weight: .semibold))
                                 .frame(width: 280)
-                                .onChange(of: email) { _ in validateEmail() }
+                                .onChange(of: email, initial: false) { _, _ in validateEmail() }
 
                             if !emailError.isEmpty {
                                 Text(emailError)
@@ -63,7 +59,6 @@ struct LoginView: View {
                             }
                         }
 
-                        // Password
                         VStack(spacing: 4) {
                             HStack {
                                 if isSecure {
@@ -82,7 +77,7 @@ struct LoginView: View {
                             .foregroundColor(.white)
                             .font(.system(size: 18, weight: .semibold))
                             .frame(width: 280)
-                            .onChange(of: password) { _ in validatePassword() }
+                            .onChange(of: password, initial: false) { _, _ in validatePassword() }
 
                             if !passwordError.isEmpty {
                                 Text(passwordError)
@@ -92,7 +87,6 @@ struct LoginView: View {
                             }
                         }
 
-                        // Remember Me
                         Toggle(isOn: $rememberMe) {
                             Text("Remember Me")
                                 .foregroundColor(.white.opacity(0.8))
@@ -100,12 +94,7 @@ struct LoginView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .orange))
                         .frame(width: 280, alignment: .leading)
 
-                        // Login Button
-                        Button(action: {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            validateEmail()
-                            validatePassword()
-                        }) {
+                        NavigationLink(destination: ProfileSetupView()) {
                             Text("Login")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.white)
@@ -114,6 +103,11 @@ struct LoginView: View {
                                 .background(Color.orange)
                                 .cornerRadius(14)
                         }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            validateEmail()
+                            validatePassword()
+                        })
 
                         HStack {
                             Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))

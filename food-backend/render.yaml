@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: food-analyzer
+    env: python
+    buildCommand: ""
+    startCommand: "python app.py"
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+    plan: free
