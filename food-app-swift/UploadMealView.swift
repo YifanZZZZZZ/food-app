@@ -24,7 +24,7 @@ struct UploadMealView: View {
                         .bold()
                         .foregroundColor(.white)
 
-                    PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         Text("Pick an Image")
                             .padding()
                             .frame(width: 200)
@@ -53,75 +53,73 @@ struct UploadMealView: View {
                         if isLoading {
                             ProgressView("Analyzing...")
                                 .foregroundColor(.white)
-                        } else {
-                            if let dish = detectedDish {
-                                ScrollView {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        Text("🍛 Dish: \(dish)")
-                                            .foregroundColor(.white)
-                                            .fontWeight(.semibold)
+                        } else if let dish = detectedDish {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("🍛 Dish: \(dish)")
+                                        .foregroundColor(.white)
+                                        .fontWeight(.semibold)
 
-                                        if !visibleIngredientLines.isEmpty {
-                                            Text("🧾 Visible Ingredients:")
-                                                .font(.headline)
-                                                .foregroundColor(.orange)
-                                            ForEach(visibleIngredientLines, id: \.self) {
-                                                Text("• \($0)")
-                                                    .foregroundColor(.white.opacity(0.9))
-                                            }
-                                        }
-
-                                        if !hiddenIngredientLines.isEmpty {
-                                            Text("🫙 Hidden Ingredients:")
-                                                .font(.headline)
-                                                .foregroundColor(.pink)
-                                            ForEach(hiddenIngredientLines, id: \.self) {
-                                                Text("• \($0)")
-                                                    .foregroundColor(.white.opacity(0.8))
-                                            }
-                                        }
-
-                                        if !nutritionLines.isEmpty {
-                                            Text("🍎 Nutrition Info:")
-                                                .font(.headline)
-                                                .foregroundColor(.green)
-                                            ForEach(nutritionLines, id: \.self) {
-                                                Text("• \($0)")
-                                                    .foregroundColor(.white.opacity(0.9))
-                                            }
-                                        } else if !rawNutritionInfo.isEmpty {
-                                            Text("🍎 Nutrition Info (Raw Output):")
-                                                .font(.headline)
-                                                .foregroundColor(.yellow)
-                                            Text(rawNutritionInfo)
-                                                .font(.caption)
-                                                .foregroundColor(.white.opacity(0.6))
-                                        }
-
-                                        if let cal = calories {
-                                            Text("🔥 Estimated Calories: \(cal) kcal")
-                                                .foregroundColor(.yellow)
-                                        }
-
-                                        HStack {
-                                            Button("Edit Ingredients") {
-                                                // placeholder
-                                            }
+                                    if !visibleIngredientLines.isEmpty {
+                                        Text("🧾 Visible Ingredients:")
+                                            .font(.headline)
                                             .foregroundColor(.orange)
-
-                                            Spacer()
-
-                                            Button("Save to Diary") {
-                                                showSaveAlert = true
-                                            }
-                                            .foregroundColor(.green)
+                                        ForEach(visibleIngredientLines, id: \.self) {
+                                            Text("• \($0)")
+                                                .foregroundColor(.white.opacity(0.9))
                                         }
-                                        .padding(.top, 10)
                                     }
-                                    .padding()
-                                    .background(Color.white.opacity(0.08))
-                                    .cornerRadius(14)
+
+                                    if !hiddenIngredientLines.isEmpty {
+                                        Text("🫙 Hidden Ingredients:")
+                                            .font(.headline)
+                                            .foregroundColor(.pink)
+                                        ForEach(hiddenIngredientLines, id: \.self) {
+                                            Text("• \($0)")
+                                                .foregroundColor(.white.opacity(0.8))
+                                        }
+                                    }
+
+                                    if !nutritionLines.isEmpty {
+                                        Text("🍎 Nutrition Info:")
+                                            .font(.headline)
+                                            .foregroundColor(.green)
+                                        ForEach(nutritionLines, id: \.self) {
+                                            Text("• \($0)")
+                                                .foregroundColor(.white.opacity(0.9))
+                                        }
+                                    } else if !rawNutritionInfo.isEmpty {
+                                        Text("🍎 Nutrition Info (Raw Output):")
+                                            .font(.headline)
+                                            .foregroundColor(.yellow)
+                                        Text(rawNutritionInfo)
+                                            .font(.caption)
+                                            .foregroundColor(.white.opacity(0.6))
+                                    }
+
+                                    if let cal = calories {
+                                        Text("🔥 Estimated Calories: \(cal) kcal")
+                                            .foregroundColor(.yellow)
+                                    }
+
+                                    HStack {
+                                        Button("Edit Ingredients") {
+                                            // Placeholder for future editing logic
+                                        }
+                                        .foregroundColor(.orange)
+
+                                        Spacer()
+
+                                        Button("Save to Diary") {
+                                            showSaveAlert = true
+                                        }
+                                        .foregroundColor(.green)
+                                    }
+                                    .padding(.top, 10)
                                 }
+                                .padding()
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(14)
                             }
                         }
                     }
@@ -146,7 +144,7 @@ struct UploadMealView: View {
             return
         }
 
-        let url = URL(string: "http://127.0.0.1:5050/analyze")!
+        let url = URL(string: "https://food-app-swift.onrender.com/analyze")! // ✅ LIVE BACKEND
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
 
@@ -185,12 +183,13 @@ struct UploadMealView: View {
                 }
             } catch {
                 print("Decoding error:", error)
+                print(String(data: data, encoding: .utf8) ?? "No response string")
             }
         }.resume()
     }
 }
 
-// MARK: - Model & Helpers
+// MARK: - Models & Helpers
 
 struct GeminiResult: Codable {
     let image_description: String
