@@ -1,3 +1,11 @@
+//
+//  LoginResponse.swift
+//  food-app-swift
+//
+//  Created by Utsav Doshi on 6/25/25.
+//
+
+
 import SwiftUI
 import AuthenticationServices
 
@@ -184,7 +192,7 @@ struct LoginView: View {
     }
 
     private func attemptLogin() {
-        guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
+        guard let url = URL(string: "https://your-api.onrender.com/login") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -200,10 +208,10 @@ struct LoginView: View {
             }
 
             DispatchQueue.main.async {
-                SessionManager.shared.login(id: response.user_id, name: response.name)
+                UserDefaults.standard.set(response.user_id, forKey: "user_id")
+                UserDefaults.standard.set(response.name, forKey: "user_name")
                 navigate = true
             }
         }.resume()
     }
-
 }

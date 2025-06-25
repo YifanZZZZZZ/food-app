@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ProfileSetupView: View {
+    @ObservedObject var session = SessionManager.shared
+
     @State private var age: Double = 25
     @State private var gender: String = "Select"
     @State private var activityLevel = "2"
@@ -30,7 +32,6 @@ struct ProfileSetupView: View {
                     .blur(radius: 4)
 
                 VStack(spacing: 28) {
-                    // Header
                     VStack(spacing: 4) {
                         Text("Step 2 of 3")
                             .foregroundColor(.white.opacity(0.6))
@@ -42,9 +43,7 @@ struct ProfileSetupView: View {
                     }
                     .padding(.top, 30)
 
-                    // Personal Info Section
                     VStack(alignment: .leading, spacing: 16) {
-                        // Age
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Age: \(Int(age))")
                                 .foregroundColor(.white.opacity(0.85))
@@ -53,7 +52,6 @@ struct ProfileSetupView: View {
                                 .accentColor(.orange)
                         }
 
-                        // Gender Picker
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Gender")
                                 .foregroundColor(.white.opacity(0.85))
@@ -77,7 +75,6 @@ struct ProfileSetupView: View {
                     .background(Color.white.opacity(0.12))
                     .cornerRadius(16)
 
-                    // Numeric Activity Picker
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Activity Level (1–4)")
                             .foregroundColor(.white.opacity(0.85))
@@ -110,9 +107,7 @@ struct ProfileSetupView: View {
                     .background(Color.white.opacity(0.12))
                     .cornerRadius(16)
 
-                    // Nutrition Section
                     VStack(alignment: .leading, spacing: 16) {
-                        // Calorie Slider
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Daily Calorie Target: \(Int(calorieTarget)) kcal")
                                 .foregroundColor(.white.opacity(0.85))
@@ -121,7 +116,6 @@ struct ProfileSetupView: View {
                                 .accentColor(.orange)
                         }
 
-                        // Preferences
                         VStack(alignment: .leading, spacing: 8) {
                             Toggle("Vegetarian", isOn: $isVegetarian)
                             Toggle("Keto", isOn: $isKeto)
@@ -135,10 +129,9 @@ struct ProfileSetupView: View {
                     .background(Color.white.opacity(0.12))
                     .cornerRadius(16)
 
-                    // CTA
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        navigateToDashboard = true
+                        saveProfile()
                     }) {
                         Text("Save & Continue")
                             .font(.system(size: 18, weight: .bold))
@@ -148,6 +141,14 @@ struct ProfileSetupView: View {
                             .background(Color.orange)
                             .cornerRadius(14)
                             .shadow(radius: 3)
+                    }
+
+                    if session.isLoggedIn {
+                        Button("Logout") {
+                            session.logout()
+                        }
+                        .foregroundColor(.red)
+                        .padding(.top, 10)
                     }
 
                     Spacer(minLength: 30)
@@ -161,5 +162,31 @@ struct ProfileSetupView: View {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
         }
+    }
+
+    func saveProfile() {
+        let payload: [String: Any] = [
+            "user_id": session.userID,
+            "age": Int(age),
+            "gender": gender,
+            "activity_level": activityLevel,
+            "calorie_target": Int(calorieTarget),
+            "is_vegetarian": isVegetarian,
+            "is_keto": isKeto,
+            "is_gluten_free": isGlutenFree
+        ]
+        guard let url = URL(string: "https://food-app-swift.onrender.com/save-profile"),
+              let json = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = json
+
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            DispatchQueue.main.async {
+                navigateToDashboard = true
+            }
+        }.resume()
     }
 }

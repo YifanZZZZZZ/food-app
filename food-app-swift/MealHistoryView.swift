@@ -1,15 +1,19 @@
-//
-//  MealHistoryView.swift
-//  food-app-swift
-//
-//  Created by Utsav Doshi on 6/20/25.
-//
-
 import SwiftUI
 
 struct MealHistoryView: View {
+    @ObservedObject var session = SessionManager.shared
     @State private var selectedTab = "Today"
+    @State private var meals: [Meal] = []
+
     let tabs = ["Today", "Week", "Month"]
+
+    struct Meal: Identifiable, Decodable {
+        let id: String
+        let dish_prediction: String
+        let nutrition_info: String
+        let image_description: String
+        let hidden_ingredients: String?
+    }
 
     var body: some View {
         NavigationStack {
@@ -17,7 +21,6 @@ struct MealHistoryView: View {
                 Color.black.ignoresSafeArea()
 
                 VStack(spacing: 20) {
-                    // Tabs
                     Picker("Tab", selection: $selectedTab) {
                         ForEach(tabs, id: \.self) {
                             Text($0)
@@ -27,10 +30,9 @@ struct MealHistoryView: View {
                     .padding(.horizontal)
                     .background(Color.white.opacity(0.05))
 
-                    // Meals
                     ScrollView {
                         VStack(spacing: 20) {
-                            ForEach(1..<6) { i in
+                            ForEach(meals) { meal in
                                 NavigationLink(destination: MealDetailView()) {
                                     HStack(spacing: 12) {
                                         Rectangle()
@@ -39,15 +41,15 @@ struct MealHistoryView: View {
                                             .cornerRadius(10)
 
                                         VStack(alignment: .leading, spacing: 4) {
-                                            Text("Meal \(i)")
+                                            Text(meal.dish_prediction)
                                                 .foregroundColor(.white)
                                                 .fontWeight(.semibold)
 
-                                            Text("Apr 24 • 1:00 PM")
+                                            Text("Uploaded")
                                                 .foregroundColor(.white.opacity(0.7))
                                                 .font(.caption)
 
-                                            Text("📊 520 kcal • 4 ingredients")
+                                            Text(meal.nutrition_info.components(separatedBy: "\n").first ?? "Nutrition Info")
                                                 .foregroundColor(.orange)
                                                 .font(.caption2)
                                         }
@@ -73,6 +75,21 @@ struct MealHistoryView: View {
             .navigationTitle("Meal History")
             .navigationBarTitleDisplayMode(.inline)
             .preferredColorScheme(.dark)
+            .onAppear {
+                fetchMeals()
+            }
         }
+    }
+
+    func fetchMeals() {
+        guard let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(session.userID)") else { return }
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            if let data = data,
+               let decoded = try? JSONDecoder().decode([Meal].self, from: data) {
+                DispatchQueue.main.async {
+                    self.meals = decoded
+                }
+            }
+        }.resume()
     }
 }

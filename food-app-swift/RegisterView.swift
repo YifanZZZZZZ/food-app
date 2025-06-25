@@ -1,6 +1,11 @@
 import SwiftUI
 import AuthenticationServices
 
+struct RegisterResponse: Codable {
+    let user_id: String
+    let name: String
+}
+
 struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -17,6 +22,7 @@ struct RegisterView: View {
     @State private var confirmPasswordError = ""
 
     @State private var navigateToProfile = false
+    @State private var registrationFailed = false
 
     var body: some View {
         NavigationStack {
@@ -38,110 +44,16 @@ struct RegisterView: View {
                         .foregroundColor(.white)
 
                     VStack(spacing: 20) {
-                        VStack(spacing: 4) {
-                            TextField("Full Name", text: $name)
-                                .autocapitalization(.words)
-                                .padding()
-                                .background(Color.white.opacity(0.28))
-                                .cornerRadius(14)
-                                .foregroundColor(.white)
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 280)
-                                .onChange(of: name, initial: false) { _, _ in validateName() }
+                        textFieldWithValidation("Full Name", text: $name, error: $nameError, validation: validateName)
+                        textFieldWithValidation("Email", text: $email, error: $emailError, validation: validateEmail, keyboardType: .emailAddress)
 
-                            if !nameError.isEmpty {
-                                Text(nameError)
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 13))
-                                    .frame(width: 280, alignment: .leading)
-                            }
-                        }
-
-                        VStack(spacing: 4) {
-                            TextField("Email", text: $email)
-                                .keyboardType(.emailAddress)
-                                .autocapitalization(.none)
-                                .padding()
-                                .background(Color.white.opacity(0.28))
-                                .cornerRadius(14)
-                                .foregroundColor(.white)
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 280)
-                                .onChange(of: email, initial: false) { _, _ in validateEmail() }
-
-                            if !emailError.isEmpty {
-                                Text(emailError)
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 13))
-                                    .frame(width: 280, alignment: .leading)
-                            }
-                        }
-
-                        VStack(spacing: 4) {
-                            HStack {
-                                if isSecure {
-                                    SecureField("Password", text: $password)
-                                } else {
-                                    TextField("Password", text: $password)
-                                }
-                                Button(action: { isSecure.toggle() }) {
-                                    Image(systemName: isSecure ? "eye.slash" : "eye")
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                            }
-                            .padding()
-                            .background(Color.white.opacity(0.28))
-                            .cornerRadius(14)
-                            .foregroundColor(.white)
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 280)
-                            .onChange(of: password, initial: false) { _, _ in validatePassword() }
-
-                            if !passwordError.isEmpty {
-                                Text(passwordError)
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 13))
-                                    .frame(width: 280, alignment: .leading)
-                            }
-                        }
-
-                        VStack(spacing: 4) {
-                            HStack {
-                                if isConfirmSecure {
-                                    SecureField("Confirm Password", text: $confirmPassword)
-                                } else {
-                                    TextField("Confirm Password", text: $confirmPassword)
-                                }
-                                Button(action: { isConfirmSecure.toggle() }) {
-                                    Image(systemName: isConfirmSecure ? "eye.slash" : "eye")
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                            }
-                            .padding()
-                            .background(Color.white.opacity(0.28))
-                            .cornerRadius(14)
-                            .foregroundColor(.white)
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 280)
-                            .onChange(of: confirmPassword, initial: false) { _, _ in validateConfirmPassword() }
-
-                            if !confirmPasswordError.isEmpty {
-                                Text(confirmPasswordError)
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 13))
-                                    .frame(width: 280, alignment: .leading)
-                            }
-                        }
+                        secureFieldWithToggle("Password", text: $password, isSecure: $isSecure, error: $passwordError, validation: validatePassword)
+                        secureFieldWithToggle("Confirm Password", text: $confirmPassword, isSecure: $isConfirmSecure, error: $confirmPasswordError, validation: validateConfirmPassword)
 
                         Button(action: {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            validateName()
-                            validateEmail()
-                            validatePassword()
-                            validateConfirmPassword()
-
-                            if nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty {
-                                navigateToProfile = true
+                            validateAllFields()
+                            if allFieldsValid() {
+                                attemptRegister()
                             }
                         }) {
                             Text("Register")
@@ -153,54 +65,136 @@ struct RegisterView: View {
                                 .cornerRadius(14)
                         }
 
+                        if registrationFailed {
+                            Text("Registration failed. Try again.")
+                                .foregroundColor(.red)
+                        }
+
                         HStack(spacing: 4) {
                             Text("Already have an account?")
                                 .foregroundColor(.white.opacity(0.75))
-                            Button(action: {
-                                dismiss()
-                            }) {
+                            Button(action: { dismiss() }) {
                                 Text("Login")
                                     .foregroundColor(.orange)
                                     .fontWeight(.semibold)
                             }
                         }
                         .font(.footnote)
+
+                        NavigationLink("", destination: ProfileSetupView(), isActive: $navigateToProfile).hidden()
                     }
 
                     Spacer()
                 }
             }
             .preferredColorScheme(.dark)
-            .navigationDestination(isPresented: $navigateToProfile) {
-                ProfileSetupView()
+        }
+    }
+
+    // MARK: - Validation & Helpers
+
+    private func textFieldWithValidation(_ title: String, text: Binding<String>, error: Binding<String>, validation: @escaping () -> Void, keyboardType: UIKeyboardType = .default) -> some View {
+        VStack(spacing: 4) {
+            TextField(title, text: text)
+                .keyboardType(keyboardType)
+                .autocapitalization(.none)
+                .padding()
+                .background(Color.white.opacity(0.28))
+                .cornerRadius(14)
+                .foregroundColor(.white)
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 280)
+                .onChange(of: text.wrappedValue, initial: false) { _, _ in validation() }
+
+            if !error.wrappedValue.isEmpty {
+                Text(error.wrappedValue)
+                    .foregroundColor(.red)
+                    .font(.system(size: 13))
+                    .frame(width: 280, alignment: .leading)
+            }
+        }
+    }
+
+    private func secureFieldWithToggle(_ title: String, text: Binding<String>, isSecure: Binding<Bool>, error: Binding<String>, validation: @escaping () -> Void) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                if isSecure.wrappedValue {
+                    SecureField(title, text: text)
+                } else {
+                    TextField(title, text: text)
+                }
+                Button(action: { isSecure.wrappedValue.toggle() }) {
+                    Image(systemName: isSecure.wrappedValue ? "eye.slash" : "eye")
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            .padding()
+            .background(Color.white.opacity(0.28))
+            .cornerRadius(14)
+            .foregroundColor(.white)
+            .font(.system(size: 18, weight: .semibold))
+            .frame(width: 280)
+            .onChange(of: text.wrappedValue, initial: false) { _, _ in validation() }
+
+            if !error.wrappedValue.isEmpty {
+                Text(error.wrappedValue)
+                    .foregroundColor(.red)
+                    .font(.system(size: 13))
+                    .frame(width: 280, alignment: .leading)
             }
         }
     }
 
     private func validateName() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        nameError = trimmed.isEmpty ? "Name is required" : ""
+        nameError = name.trimmingCharacters(in: .whitespaces).isEmpty ? "Name is required" : ""
     }
 
     private func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         emailError = trimmed.isEmpty ? "Email is required" :
-                      (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
+            (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
     }
 
     private func validatePassword() {
-        let trimmed = password.trimmingCharacters(in: .whitespaces)
-        passwordError = trimmed.isEmpty ? "Password is required" :
-                         (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
+        passwordError = password.count < 6 ? "Password must be at least 6 characters" : ""
     }
 
     private func validateConfirmPassword() {
-        let trimmed = confirmPassword.trimmingCharacters(in: .whitespaces)
-        confirmPasswordError = trimmed.isEmpty ? "Please confirm your password" :
-                                 (trimmed != password ? "Passwords do not match" : "")
+        confirmPasswordError = confirmPassword != password ? "Passwords do not match" : ""
     }
-}
 
-#Preview {
-    RegisterView()
+    private func validateAllFields() {
+        validateName()
+        validateEmail()
+        validatePassword()
+        validateConfirmPassword()
+    }
+
+    private func allFieldsValid() -> Bool {
+        return nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty
+    }
+
+    private func attemptRegister() {
+        guard let url = URL(string: "https://food-app-swift.onrender.com/register") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload = ["name": name, "email": email, "password": password]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data,
+                  let response = try? JSONDecoder().decode(RegisterResponse.self, from: data) else {
+                DispatchQueue.main.async { registrationFailed = true }
+                return
+            }
+
+            DispatchQueue.main.async {
+                SessionManager.shared.login(id: response.user_id, name: response.name)
+                navigateToProfile = true
+            }
+        }.resume()
+    }
 }
