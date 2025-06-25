@@ -5,24 +5,24 @@ import base64
 import os
 import re
 from datetime import datetime
-
 from dotenv import load_dotenv
-load_dotenv()  # loads from .env into os.environ
 
+# ---------- Load Environment ----------
+load_dotenv()  # Load GEMINI_API_KEY from .env
 
-# Device config
-DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+# ---------- Device Config ----------
+DEVICE = torch.device("mps" if torch.backends.mps.is_available() else
+                      "cuda" if torch.cuda.is_available() else "cpu")
 
-# Gemini API key
+# ---------- Gemini API Setup ----------
 GEN_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEN_API_KEY:
     raise ValueError("GEMINI_API_KEY is not set in environment variables.")
-genai.configure(api_key=GEN_API_KEY)
 
+genai.configure(api_key=GEN_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
-# ---------- Helper Functions ----------
-
+# ---------- Utility Functions ----------
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
@@ -80,11 +80,8 @@ def estimate_nutrition_from_ingredients(dish_name, visible_ingredients):
         "Output each nutrient on a new line in this exact format:\n"
         "Nutrient | Value | Unit | Reasoning\n"
         "Value must be a numeric value only.\n"
-        "Example:\n"
-        "Calories | 720 | kcal | Estimated from rice and cheese.\n"
-        "Protein | 32 | g | Chicken and beans contribute majorly.\n\n"
-        "Avoid ranges (like 100–200) or vague statements.\n"
-        "Include at least these nutrients: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
+        "Include at least: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
+        "Avoid ranges like 100–200 or vague words.\n"
         "Be strict with the format."
     )
     try:
@@ -116,19 +113,43 @@ def parse_to_dict(text):
                 continue
     return data_dict
 
-# ---------- MAIN ENTRY FUNCTION ----------
+# ---------- MAIN Function ----------
+from dotenv import load_dotenv
+load_dotenv()
+
+mongo_uri = os.getenv("MONGO_URI")
+mongo_db = os.getenv("MONGO_DB", "food_db")
+
+client = MongoClient(mongo_uri)
+db = client[mongo_db]
+
+meals_collection = db["meals"]
+
 
 def full_image_analysis(image_path, user_id):
     gemini_description = analyze_image_with_gemini(image_path)
     dish_name = extract_dish_name(gemini_description)
-    cleaned_ingredients = extract_ingredients_only(gemini_description)
+    visible = extract_ingredients_only(gemini_description)
+    hidden = search_hidden_ingredients(dish_name, visible)
+    nutrition = estimate_nutrition_from_ingredients(dish_name, visible)
 
-    hidden_ingredients = search_hidden_ingredients(dish_name, cleaned_ingredients)
-    nutrition_info = estimate_nutrition_from_ingredients(dish_name, cleaned_ingredients)
+    with open(image_path, "rb") as img_file:
+        img_binary = Binary(img_file.read())
+
+    meals_collection.insert_one({
+        "user_id": user_id,
+        "dish": dish_name,
+        "image": img_binary,
+        "image_filename": os.path.basename(image_path),
+        "timestamp": datetime.now(),
+        "visible_ingredients": visible,
+        "hidden_ingredients": hidden,
+        "nutrition_info": nutrition
+    })
 
     return {
-        'image_description': gemini_description,
-        'dish_prediction': dish_name,
-        'hidden_ingredients': hidden_ingredients,
-        'nutrition_info': nutrition_info
+        "dish_prediction": dish_name,
+        "image_description": gemini_description,
+        "hidden_ingredients": hidden,
+        "nutrition_info": nutrition
     }

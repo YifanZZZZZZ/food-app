@@ -11,3 +11,8 @@ __pycache__/
 *.jpeg
 *.png
 uploads/
+
+.env
+__pycache__/
+uploads/
+*.sqlite3
