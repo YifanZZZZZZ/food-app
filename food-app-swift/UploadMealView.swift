@@ -104,7 +104,7 @@ struct UploadMealView: View {
 
                                     HStack {
                                         Button("Edit Ingredients") {
-                                            // Placeholder for future editing logic
+                                            // Future editing logic
                                         }
                                         .foregroundColor(.orange)
 
@@ -144,12 +144,15 @@ struct UploadMealView: View {
             return
         }
 
-        let url = URL(string: "https://food-app-swift.onrender.com/analyze")! // ✅ LIVE BACKEND
+        // Use Render backend URL
+        let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let userId = UserDefaults.standard.string(forKey: "user_id") ?? "guest"
 
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -159,7 +162,7 @@ struct UploadMealView: View {
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"user_id\"\r\n\r\n".data(using: .utf8)!)
-        body.append("ios_user_123\r\n".data(using: .utf8)!)
+        body.append("\(userId)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
 
@@ -199,23 +202,19 @@ struct GeminiResult: Codable {
 }
 
 func parseIngredientLines(from text: String) -> [String] {
-    text
-        .split(separator: "\n")
-        .compactMap { line in
-            let parts = line.split(separator: "|")
-            guard parts.count == 4 else { return nil }
-            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-        }
+    text.split(separator: "\n").compactMap { line in
+        let parts = line.split(separator: "|")
+        guard parts.count == 4 else { return nil }
+        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+    }
 }
 
 func parseNutritionLines(from text: String) -> [String] {
-    text
-        .split(separator: "\n")
-        .compactMap { line in
-            let parts = line.split(separator: "|")
-            guard parts.count == 4 else { return nil }
-            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-        }
+    text.split(separator: "\n").compactMap { line in
+        let parts = line.split(separator: "|")
+        guard parts.count == 4 else { return nil }
+        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+    }
 }
 
 func extractCalories(from text: String) -> Int? {
