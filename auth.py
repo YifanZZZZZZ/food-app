@@ -55,3 +55,31 @@ def login():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+
+@auth_bp.route('/save-profile', methods=['POST'])
+def save_profile():
+    data = request.json
+    user_id = data.get("user_id")
+    profile = {k: v for k, v in data.items() if k != "user_id"}
+
+    profiles_collection.update_one(
+        {"user_id": user_id},
+        {"$set": profile},
+        upsert=True
+    )
+    return jsonify({"message": "Profile saved"})
+
+
+@auth_bp.route('/profile', methods=['GET'])
+def get_profile():
+    user_id = request.args.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    profile = profiles_collection.find_one({"user_id": user_id})
+    if not profile:
+        return jsonify({"error": "Profile not found"}), 404
+
+    profile["_id"] = str(profile["_id"])  # Convert ObjectId to string
+    return jsonify(profile)

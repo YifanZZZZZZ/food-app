@@ -21,6 +21,10 @@ struct ProfileSetupView: View {
         "4": "Very Active"
     ]
 
+    init() {
+        print("➡️ ProfileSetupView loaded for user_id:", SessionManager.shared.userID)
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -32,6 +36,7 @@ struct ProfileSetupView: View {
                     .blur(radius: 4)
 
                 VStack(spacing: 28) {
+                    // Header
                     VStack(spacing: 4) {
                         Text("Step 2 of 3")
                             .foregroundColor(.white.opacity(0.6))
@@ -43,6 +48,7 @@ struct ProfileSetupView: View {
                     }
                     .padding(.top, 30)
 
+                    // Age & Gender
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Age: \(Int(age))")
@@ -75,6 +81,7 @@ struct ProfileSetupView: View {
                     .background(Color.white.opacity(0.12))
                     .cornerRadius(16)
 
+                    // Activity Level
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Activity Level (1–4)")
                             .foregroundColor(.white.opacity(0.85))
@@ -107,6 +114,7 @@ struct ProfileSetupView: View {
                     .background(Color.white.opacity(0.12))
                     .cornerRadius(16)
 
+                    // Nutrition Preferences
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Daily Calorie Target: \(Int(calorieTarget)) kcal")
@@ -129,6 +137,7 @@ struct ProfileSetupView: View {
                     .background(Color.white.opacity(0.12))
                     .cornerRadius(16)
 
+                    // Save Button
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         saveProfile()
@@ -143,6 +152,7 @@ struct ProfileSetupView: View {
                             .shadow(radius: 3)
                     }
 
+                    // Logout Option
                     if session.isLoggedIn {
                         Button("Logout") {
                             session.logout()
@@ -164,6 +174,7 @@ struct ProfileSetupView: View {
         }
     }
 
+    // MARK: - Save Profile Function
     func saveProfile() {
         let payload: [String: Any] = [
             "user_id": session.userID,
@@ -175,15 +186,29 @@ struct ProfileSetupView: View {
             "is_keto": isKeto,
             "is_gluten_free": isGlutenFree
         ]
+
         guard let url = URL(string: "https://food-app-swift.onrender.com/save-profile"),
-              let json = try? JSONSerialization.data(withJSONObject: payload) else { return }
+              let json = try? JSONSerialization.data(withJSONObject: payload) else {
+            print("❌ Failed to build URL or JSON")
+            return
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = json
 
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Profile save error:", error.localizedDescription)
+                return
+            }
+
+            if let data = data,
+               let responseText = String(data: data, encoding: .utf8) {
+                print("✅ Profile save response:", responseText)
+            }
+
             DispatchQueue.main.async {
                 navigateToDashboard = true
             }
