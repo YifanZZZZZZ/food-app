@@ -116,6 +116,8 @@ def parse_to_dict(text):
 # ---------- MAIN Function ----------
 from dotenv import load_dotenv
 load_dotenv()
+from pymongo import MongoClient
+
 
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB", "food_db")
