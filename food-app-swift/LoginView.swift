@@ -44,6 +44,7 @@ struct LoginView: View {
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
 
+                        // Email field
                         VStack(spacing: 4) {
                             TextField("Email", text: $email)
                                 .keyboardType(.emailAddress)
@@ -64,6 +65,7 @@ struct LoginView: View {
                             }
                         }
 
+                        // Password field
                         VStack(spacing: 4) {
                             HStack {
                                 if isSecure {
@@ -92,6 +94,7 @@ struct LoginView: View {
                             }
                         }
 
+                        // Remember Me
                         Toggle(isOn: $rememberMe) {
                             Text("Remember Me")
                                 .foregroundColor(.white.opacity(0.8))
@@ -99,6 +102,7 @@ struct LoginView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .orange))
                         .frame(width: 280, alignment: .leading)
 
+                        // Login Button
                         Button("Login") {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             validateEmail()
@@ -119,6 +123,47 @@ struct LoginView: View {
                                 .foregroundColor(.red)
                         }
 
+                        // Register Link (Restored)
+                        HStack(spacing: 4) {
+                            Text("New here?")
+                                .foregroundColor(.white.opacity(0.75))
+                            NavigationLink(destination: RegisterView()) {
+                                Text("Register")
+                                    .foregroundColor(.orange)
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .font(.footnote)
+
+                        // OR Divider
+                        HStack {
+                            Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
+                            Text("OR").foregroundColor(.gray.opacity(0.7)).padding(.horizontal, 6)
+                            Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
+                        }
+                        .frame(width: 260)
+
+                        // Sign in with Apple/Google (Optional UI)
+                        VStack(spacing: 12) {
+                            SignInWithAppleButton(.signIn, onRequest: { _ in }, onCompletion: { _ in })
+                                .frame(width: 280, height: 44)
+                                .cornerRadius(10)
+
+                            Button(action: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }) {
+                                HStack {
+                                    Image(systemName: "globe")
+                                    Text("Sign in with Google").fontWeight(.medium)
+                                }
+                                .frame(width: 280, height: 44)
+                                .foregroundColor(.white)
+                                .background(Color.red.opacity(0.85))
+                                .cornerRadius(10)
+                            }
+                        }
+
+                        // Navigation
                         NavigationLink(destination: ProfileSetupView(), isActive: $navigate) {
                             EmptyView()
                         }
@@ -135,6 +180,7 @@ struct LoginView: View {
         }
     }
 
+    // MARK: - Validation
     private func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         emailError = trimmed.isEmpty ? "Email is required" :
@@ -147,6 +193,7 @@ struct LoginView: View {
             (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
     }
 
+    // MARK: - API Call
     private func attemptLogin() {
         guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
 

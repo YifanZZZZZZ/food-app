@@ -6,11 +6,11 @@ import os
 import re
 from datetime import datetime
 from dotenv import load_dotenv
-from bson.binary import Binary  # ✅ ADD THIS
-
+from bson.binary import Binary
+from pymongo import MongoClient
 
 # ---------- Load Environment ----------
-load_dotenv()  # Load GEMINI_API_KEY from .env
+load_dotenv()
 
 # ---------- Device Config ----------
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else
@@ -23,6 +23,13 @@ if not GEN_API_KEY:
 
 genai.configure(api_key=GEN_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+
+# ---------- MongoDB Setup ----------
+mongo_uri = os.getenv("MONGO_URI")
+mongo_db = os.getenv("MONGO_DB", "food-app-swift")
+client = MongoClient(mongo_uri)
+db = client[mongo_db]
+meals_collection = db["meals"]
 
 # ---------- Utility Functions ----------
 def encode_image(image_path):
@@ -115,21 +122,7 @@ def parse_to_dict(text):
                 continue
     return data_dict
 
-# ---------- MAIN Function ----------
-from dotenv import load_dotenv
-load_dotenv()
-from pymongo import MongoClient
-
-
-mongo_uri = os.getenv("MONGO_URI")
-mongo_db = os.getenv("MONGO_DB", "food_db")
-
-client = MongoClient(mongo_uri)
-db = client[mongo_db]
-
-meals_collection = db["meals"]
-
-
+# ---------- Main Analysis Function ----------
 def full_image_analysis(image_path, user_id):
     gemini_description = analyze_image_with_gemini(image_path)
     dish_name = extract_dish_name(gemini_description)
@@ -140,7 +133,7 @@ def full_image_analysis(image_path, user_id):
     with open(image_path, "rb") as img_file:
         img_binary = Binary(img_file.read())
 
-    meals_collection.insert_one({
+    meal_doc = {
         "user_id": user_id,
         "dish": dish_name,
         "image": img_binary,
@@ -149,7 +142,9 @@ def full_image_analysis(image_path, user_id):
         "visible_ingredients": visible,
         "hidden_ingredients": hidden,
         "nutrition_info": nutrition
-    })
+    }
+
+    meals_collection.insert_one(meal_doc)
 
     return {
         "dish_prediction": dish_name,
