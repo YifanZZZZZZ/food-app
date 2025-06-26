@@ -22,11 +22,9 @@ struct LoginView: View {
                 Image("LoginBackground")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
-                    .clipped()
+                    .ignoresSafeArea()
                     .overlay(Color.black.opacity(0.45))
                     .blur(radius: 4)
-                    .ignoresSafeArea()
 
                 VStack {
                     Spacer(minLength: 80)
@@ -56,7 +54,7 @@ struct LoginView: View {
                                 .foregroundColor(.white)
                                 .font(.system(size: 18, weight: .semibold))
                                 .frame(width: 280)
-                                .onChange(of: email, initial: false) { _, _ in validateEmail() }
+                                .onChange(of: email) { _, _ in validateEmail() }
 
                             if !emailError.isEmpty {
                                 Text(emailError)
@@ -84,7 +82,7 @@ struct LoginView: View {
                             .foregroundColor(.white)
                             .font(.system(size: 18, weight: .semibold))
                             .frame(width: 280)
-                            .onChange(of: password, initial: false) { _, _ in validatePassword() }
+                            .onChange(of: password) { _, _ in validatePassword() }
 
                             if !passwordError.isEmpty {
                                 Text(passwordError)
@@ -121,44 +119,10 @@ struct LoginView: View {
                                 .foregroundColor(.red)
                         }
 
-                        HStack {
-                            Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
-                            Text("OR").foregroundColor(.gray.opacity(0.7)).padding(.horizontal, 6)
-                            Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
+                        NavigationLink(destination: ProfileSetupView(), isActive: $navigate) {
+                            EmptyView()
                         }
-                        .frame(width: 260)
-
-                        VStack(spacing: 12) {
-                            SignInWithAppleButton(.signIn, onRequest: { _ in }, onCompletion: { _ in })
-                                .frame(width: 280, height: 44)
-                                .cornerRadius(10)
-
-                            Button(action: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            }) {
-                                HStack {
-                                    Image(systemName: "globe")
-                                    Text("Sign in with Google").fontWeight(.medium)
-                                }
-                                .frame(width: 280, height: 44)
-                                .foregroundColor(.white)
-                                .background(Color.red.opacity(0.85))
-                                .cornerRadius(10)
-                            }
-                        }
-
-                        HStack(spacing: 4) {
-                            Text("New here?")
-                                .foregroundColor(.white.opacity(0.75))
-                            NavigationLink(destination: RegisterView()) {
-                                Text("Register")
-                                    .foregroundColor(.orange)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .font(.footnote)
-
-                        NavigationLink("", destination: ProfileSetupView(), isActive: $navigate).hidden()
+                        .hidden()
                     }
 
                     Spacer()
@@ -174,28 +138,36 @@ struct LoginView: View {
     private func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         emailError = trimmed.isEmpty ? "Email is required" :
-                     (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
+            (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
     }
 
     private func validatePassword() {
         let trimmed = password.trimmingCharacters(in: .whitespaces)
         passwordError = trimmed.isEmpty ? "Password is required" :
-                          (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
+            (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
     }
 
     private func attemptLogin() {
         guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
 
+        let payload = ["email": email, "password": password]
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload = ["email": email, "password": password]
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
+        print("Sending login request:", payload)
+
         URLSession.shared.dataTask(with: request) { data, _, error in
+            if let data = data {
+                print("Raw login response:", String(data: data, encoding: .utf8) ?? "nil")
+            }
+
             guard let data = data,
                   let response = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
-                DispatchQueue.main.async { loginFailed = true }
+                DispatchQueue.main.async {
+                    loginFailed = true
+                }
                 return
             }
 
@@ -205,5 +177,4 @@ struct LoginView: View {
             }
         }.resume()
     }
-
 }
