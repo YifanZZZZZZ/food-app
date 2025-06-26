@@ -6,6 +6,8 @@ import os
 import re
 from datetime import datetime
 from dotenv import load_dotenv
+from bson.binary import Binary  # ✅ ADD THIS
+
 
 # ---------- Load Environment ----------
 load_dotenv()  # Load GEMINI_API_KEY from .env
