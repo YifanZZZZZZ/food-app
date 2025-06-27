@@ -1,6 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 
+// Combine LoginResponse here to avoid redeclaration elsewhere
 struct LoginResponse: Codable {
     let user_id: String
     let name: String
@@ -11,9 +12,11 @@ struct LoginView: View {
     @State private var password = ""
     @State private var isSecure = true
     @State private var rememberMe = false
+
     @State private var emailError = ""
     @State private var passwordError = ""
     @State private var loginFailed = false
+    @State private var loginErrorMessage = ""
     @State private var navigate = false
 
     var body: some View {
@@ -44,7 +47,6 @@ struct LoginView: View {
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
 
-                        // Email field
                         VStack(spacing: 4) {
                             TextField("Email", text: $email)
                                 .keyboardType(.emailAddress)
@@ -65,7 +67,6 @@ struct LoginView: View {
                             }
                         }
 
-                        // Password field
                         VStack(spacing: 4) {
                             HStack {
                                 if isSecure {
@@ -94,7 +95,6 @@ struct LoginView: View {
                             }
                         }
 
-                        // Remember Me
                         Toggle(isOn: $rememberMe) {
                             Text("Remember Me")
                                 .foregroundColor(.white.opacity(0.8))
@@ -102,7 +102,6 @@ struct LoginView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .orange))
                         .frame(width: 280, alignment: .leading)
 
-                        // Login Button
                         Button("Login") {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             validateEmail()
@@ -119,23 +118,13 @@ struct LoginView: View {
                         .cornerRadius(14)
 
                         if loginFailed {
-                            Text("Login failed. Please try again.")
+                            Text(loginErrorMessage)
                                 .foregroundColor(.red)
+                                .font(.footnote)
+                                .multilineTextAlignment(.center)
+                                .frame(width: 280)
                         }
 
-                        // Register Link (Restored)
-                        HStack(spacing: 4) {
-                            Text("New here?")
-                                .foregroundColor(.white.opacity(0.75))
-                            NavigationLink(destination: RegisterView()) {
-                                Text("Register")
-                                    .foregroundColor(.orange)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .font(.footnote)
-
-                        // OR Divider
                         HStack {
                             Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
                             Text("OR").foregroundColor(.gray.opacity(0.7)).padding(.horizontal, 6)
@@ -143,7 +132,6 @@ struct LoginView: View {
                         }
                         .frame(width: 260)
 
-                        // Sign in with Apple/Google (Optional UI)
                         VStack(spacing: 12) {
                             SignInWithAppleButton(.signIn, onRequest: { _ in }, onCompletion: { _ in })
                                 .frame(width: 280, height: 44)
@@ -163,11 +151,19 @@ struct LoginView: View {
                             }
                         }
 
-                        // Navigation
-                        NavigationLink(destination: ProfileSetupView(), isActive: $navigate) {
-                            EmptyView()
+                        HStack(spacing: 4) {
+                            Text("New here?")
+                                .foregroundColor(.white.opacity(0.75))
+                            NavigationLink(destination: RegisterView()) {
+                                Text("Register")
+                                    .foregroundColor(.orange)
+                                    .fontWeight(.semibold)
+                            }
                         }
-                        .hidden()
+                        .font(.footnote)
+
+                        NavigationLink("", destination: ProfileSetupView(), isActive: $navigate)
+                            .hidden()
                     }
 
                     Spacer()
@@ -193,34 +189,71 @@ struct LoginView: View {
             (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
     }
 
-    // MARK: - API Call
+    // MARK: - Login API Call
     private func attemptLogin() {
         guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
 
-        let payload = ["email": email, "password": password]
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        print("Sending login request:", payload)
+        let payload = ["email": email, "password": password]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            print("❌ Failed to serialize payload")
+            return
+        }
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let data = data {
-                print("Raw login response:", String(data: data, encoding: .utf8) ?? "nil")
-            }
+        request.httpBody = jsonData
 
-            guard let data = data,
-                  let response = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Login Error: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     loginFailed = true
+                    loginErrorMessage = "Network error: \(error.localizedDescription)"
                 }
                 return
             }
 
-            DispatchQueue.main.async {
-                SessionManager.shared.login(id: response.user_id, name: response.name)
-                navigate = true
+            guard let httpResponse = response as? HTTPURLResponse,
+                  let data = data else {
+                print("❌ Invalid response")
+                DispatchQueue.main.async {
+                    loginFailed = true
+                    loginErrorMessage = "Unexpected server response."
+                }
+                return
+            }
+
+            print("🌐 Status Code: \(httpResponse.statusCode)")
+            print("🧾 Raw Response: \(String(data: data, encoding: .utf8) ?? "Invalid JSON")")
+
+            if httpResponse.statusCode == 200 {
+                if let response = try? JSONDecoder().decode(LoginResponse.self, from: data) {
+                    DispatchQueue.main.async {
+                        SessionManager.shared.login(id: response.user_id, name: response.name)
+                        navigate = true
+                    }
+                } else {
+                    print("❌ Failed to decode response")
+                    DispatchQueue.main.async {
+                        loginFailed = true
+                        loginErrorMessage = "Login succeeded but decoding failed."
+                    }
+                }
+            } else {
+                if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let serverMessage = json["error"] as? String {
+                    DispatchQueue.main.async {
+                        loginFailed = true
+                        loginErrorMessage = "Server: \(serverMessage)"
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        loginFailed = true
+                        loginErrorMessage = "Unknown login failure."
+                    }
+                }
             }
         }.resume()
     }
