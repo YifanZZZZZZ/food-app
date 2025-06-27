@@ -65,8 +65,7 @@ struct UploadMealView: View {
                                             .font(.headline)
                                             .foregroundColor(.orange)
                                         ForEach(visibleIngredientLines, id: \.self) {
-                                            Text("• \($0)")
-                                                .foregroundColor(.white.opacity(0.9))
+                                            Text("• \($0)").foregroundColor(.white.opacity(0.9))
                                         }
                                     }
 
@@ -75,8 +74,7 @@ struct UploadMealView: View {
                                             .font(.headline)
                                             .foregroundColor(.pink)
                                         ForEach(hiddenIngredientLines, id: \.self) {
-                                            Text("• \($0)")
-                                                .foregroundColor(.white.opacity(0.8))
+                                            Text("• \($0)").foregroundColor(.white.opacity(0.8))
                                         }
                                     }
 
@@ -85,8 +83,7 @@ struct UploadMealView: View {
                                             .font(.headline)
                                             .foregroundColor(.green)
                                         ForEach(nutritionLines, id: \.self) {
-                                            Text("• \($0)")
-                                                .foregroundColor(.white.opacity(0.9))
+                                            Text("• \($0)").foregroundColor(.white.opacity(0.9))
                                         }
                                     } else if !rawNutritionInfo.isEmpty {
                                         Text("🍎 Nutrition Info (Raw Output):")
@@ -103,14 +100,13 @@ struct UploadMealView: View {
                                     }
 
                                     HStack {
-                                        Button("Edit Ingredients") {
-                                            // Future editing logic
-                                        }
-                                        .foregroundColor(.orange)
+                                        Button("Edit Ingredients") {}
+                                            .foregroundColor(.orange)
 
                                         Spacer()
 
                                         Button("Save to Diary") {
+                                            saveMealToBackend()
                                             showSaveAlert = true
                                         }
                                         .foregroundColor(.green)
@@ -144,7 +140,6 @@ struct UploadMealView: View {
             return
         }
 
-        // Use Render backend URL
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -169,13 +164,9 @@ struct UploadMealView: View {
         URLSession.shared.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async { self.isLoading = false }
 
-            guard let data = data, error == nil else {
-                print("Network error:", error?.localizedDescription ?? "Unknown error")
-                return
-            }
+            guard let data = data, error == nil else { return }
 
-            do {
-                let result = try JSONDecoder().decode(GeminiResult.self, from: data)
+            if let result = try? JSONDecoder().decode(GeminiResult.self, from: data) {
                 DispatchQueue.main.async {
                     self.detectedDish = result.dish_prediction
                     self.visibleIngredientLines = parseIngredientLines(from: result.image_description)
@@ -184,45 +175,44 @@ struct UploadMealView: View {
                     self.calories = extractCalories(from: result.nutrition_info)
                     self.rawNutritionInfo = result.nutrition_info
                 }
-            } catch {
-                print("Decoding error:", error)
-                print(String(data: data, encoding: .utf8) ?? "No response string")
+            }
+        }.resume()
+    }
+
+    func saveMealToBackend() {
+        guard let dish = detectedDish else { return }
+        let userId = UserDefaults.standard.string(forKey: "user_id") ?? "guest"
+
+        let payload: [String: Any] = [
+            "user_id": userId,
+            "dish_prediction": dish,
+            "image_description": visibleIngredientLines.joined(separator: "\n"),
+            "hidden_ingredients": hiddenIngredientLines.joined(separator: "\n"),
+            "nutrition_info": rawNutritionInfo,
+            "image": selectedImage?.jpegData(compressionQuality: 0.6)?.base64EncodedString() ?? ""
+        ]
+
+        guard let url = URL(string: "https://food-app-swift.onrender.com/save-meal"),
+              let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
+                }
             }
         }.resume()
     }
 }
-
-// MARK: - Models & Helpers
 
 struct GeminiResult: Codable {
     let image_description: String
     let dish_prediction: String
     let hidden_ingredients: String?
     let nutrition_info: String
-}
-
-func parseIngredientLines(from text: String) -> [String] {
-    text.split(separator: "\n").compactMap { line in
-        let parts = line.split(separator: "|")
-        guard parts.count == 4 else { return nil }
-        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-    }
-}
-
-func parseNutritionLines(from text: String) -> [String] {
-    text.split(separator: "\n").compactMap { line in
-        let parts = line.split(separator: "|")
-        guard parts.count == 4 else { return nil }
-        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-    }
-}
-
-func extractCalories(from text: String) -> Int? {
-    for line in text.split(separator: "\n") {
-        let parts = line.split(separator: "|")
-        if parts.count == 4, parts[0].lowercased().contains("calories") {
-            return Int(parts[1].trimmingCharacters(in: .whitespaces))
-        }
-    }
-    return nil
 }
