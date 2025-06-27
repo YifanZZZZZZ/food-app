@@ -5,3 +5,4 @@ google-generativeai
 python-dotenv
 numpy
 pymongo
+flask-cors
