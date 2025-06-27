@@ -2,10 +2,7 @@ import SwiftUI
 
 struct MealHistoryView: View {
     @ObservedObject var session = SessionManager.shared
-    @State private var selectedTab = "Today"
     @State private var meals: [Meal] = []
-
-    let tabs = ["Today", "Week", "Month"]
 
     struct Meal: Identifiable, Decodable {
         let _id: String
@@ -17,76 +14,48 @@ struct MealHistoryView: View {
         let image: String?
     }
 
-
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-
-                VStack(spacing: 20) {
-                    Picker("Tab", selection: $selectedTab) {
-                        ForEach(tabs, id: \.self) {
-                            Text($0)
-                        }
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                    .padding(.horizontal)
-                    .background(Color.white.opacity(0.05))
-
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            ForEach(meals) { meal in
-                                NavigationLink(destination: MealDetailView()) {
-                                    HStack(spacing: 12) {
-                                        if let base64 = meal.image,
-                                           let uiImage = decodeBase64ToUIImage(base64) {
-                                            Image(uiImage: uiImage)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: 70, height: 70)
-                                                .cornerRadius(10)
-                                        } else {
-                                            Rectangle()
-                                                .fill(Color.orange.opacity(0.8))
-                                                .frame(width: 70, height: 70)
-                                                .cornerRadius(10)
-                                        }
-
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(meal.dish_prediction)
-                                                .foregroundColor(.white)
-                                                .fontWeight(.semibold)
-
-                                            Text("Uploaded")
-                                                .foregroundColor(.white.opacity(0.7))
-                                                .font(.caption)
-
-                                            Text(meal.nutrition_info.components(separatedBy: "\n").first ?? "Nutrition Info")
-                                                .foregroundColor(.orange)
-                                                .font(.caption2)
-                                        }
-
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .foregroundColor(.white.opacity(0.6))
-                                    }
-                                    .padding()
-                                    .background(Color.white.opacity(0.05))
-                                    .cornerRadius(14)
-                                    .frame(width: 320)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        ForEach(meals) { meal in
+                            HStack(spacing: 12) {
+                                if let base64 = meal.image,
+                                   let image = decodeBase64ToUIImage(base64) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 70, height: 70)
+                                        .cornerRadius(10)
+                                } else {
+                                    Rectangle()
+                                        .fill(Color.orange.opacity(0.7))
+                                        .frame(width: 70, height: 70)
+                                        .cornerRadius(10)
                                 }
-                            }
-                        }
-                        .padding(.top)
-                    }
 
-                    Spacer()
+                                VStack(alignment: .leading) {
+                                    Text(meal.dish_prediction)
+                                        .foregroundColor(.white)
+                                        .bold()
+
+                                    Text(meal.nutrition_info.components(separatedBy: "\n").first ?? "")
+                                        .foregroundColor(.orange)
+                                        .font(.caption)
+                                }
+                                Spacer()
+                            }
+                            .padding()
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(14)
+                        }
+                    }
+                    .padding()
                 }
-                .padding(.top, 30)
             }
             .navigationTitle("Meal History")
-            .navigationBarTitleDisplayMode(.inline)
-            .preferredColorScheme(.dark)
             .onAppear {
                 fetchMeals()
             }
@@ -99,10 +68,10 @@ struct MealHistoryView: View {
             if let data = data,
                let decoded = try? JSONDecoder().decode([Meal].self, from: data) {
                 DispatchQueue.main.async {
-                    self.meals = decoded
+                    meals = decoded
                 }
             } else {
-                print("❌ Meal decoding failed")
+                print("❌ Failed to decode meal history")
             }
         }.resume()
     }

@@ -1,25 +1,27 @@
-//
-//  SessionManager.swift
-//  food-app-swift
-//
-//  Created by Utsav Doshi on 6/25/25.
-//
-
 import Foundation
+import Combine
 
 class SessionManager: ObservableObject {
     static let shared = SessionManager()
 
-    @Published var userID: String = UserDefaults.standard.string(forKey: "user_id") ?? ""
-    @Published var userName: String = UserDefaults.standard.string(forKey: "user_name") ?? ""
+    @Published var isLoggedIn: Bool = false
+    @Published var userID: String = ""
+    @Published var userName: String = ""
 
-    var isLoggedIn: Bool {
-        !userID.isEmpty
+    private init() {
+        if let id = UserDefaults.standard.string(forKey: "user_id"),
+           let name = UserDefaults.standard.string(forKey: "user_name") {
+            userID = id
+            userName = name
+            isLoggedIn = true
+        }
     }
 
     func login(id: String, name: String) {
         userID = id
         userName = name
+        isLoggedIn = true
+
         UserDefaults.standard.set(id, forKey: "user_id")
         UserDefaults.standard.set(name, forKey: "user_name")
     }
@@ -27,6 +29,8 @@ class SessionManager: ObservableObject {
     func logout() {
         userID = ""
         userName = ""
+        isLoggedIn = false
+
         UserDefaults.standard.removeObject(forKey: "user_id")
         UserDefaults.standard.removeObject(forKey: "user_name")
     }
