@@ -1,68 +1,93 @@
 from flask import Flask, request, jsonify
-import tempfile
-import os
-import base64
-from model_pipeline import full_image_analysis
-from auth import auth_bp
+from flask_cors import CORS
 from pymongo import MongoClient
+from model_pipeline import full_image_analysis
+import base64
+import os
 
-# --- Flask App Setup ---
 app = Flask(__name__)
-app.secret_key = 'your-secret'
-app.register_blueprint(auth_bp)
+CORS(app)
 
-# --- MongoDB Setup ---
-client = MongoClient(os.getenv("MONGO_URI"))
-db = client[os.getenv("MONGO_DB", "food-app-swift")]
+# MongoDB setup (replace credentials if needed)
+client = MongoClient("mongodb+srv://<username>:<password>@cluster.mongodb.net/")
+db = client["food_app"]
 meals_collection = db["meals"]
+users_collection = db["users"]
 profiles_collection = db["profiles"]
 
-# --- Analyze Image Upload ---
+@app.route("/")
+def home():
+    return "Food Analyzer Backend is Running"
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    if users_collection.find_one({"email": data["email"]}):
+        return jsonify({"error": "Email already registered"}), 400
+    user = {
+        "name": data["name"],
+        "email": data["email"],
+        "password": data["password"]
+    }
+    result = users_collection.insert_one(user)
+    return jsonify({"user_id": str(result.inserted_id), "name": data["name"]})
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    user = users_collection.find_one({"email": data["email"]})
+    if not user or user["password"] != data["password"]:
+        return jsonify({"error": "Invalid email or password"}), 401
+    return jsonify({"user_id": str(user["_id"]), "name": user["name"]})
+
+@app.route("/save-profile", methods=["POST"])
+def save_profile():
+    data = request.get_json()
+    user_id = data["user_id"]
+    profiles_collection.update_one(
+        {"user_id": user_id},
+        {"$set": data},
+        upsert=True
+    )
+    return "Profile saved"
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    if 'image' not in request.files or 'user_id' not in request.form:
-        return jsonify({"error": "Missing image or user_id"}), 400
+    image_file = request.files["image"]
+    user_id = request.form.get("user_id", "guest")
+    image_bytes = image_file.read()
 
-    image_file = request.files['image']
-    user_id = request.form['user_id']
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-        image_file.save(tmp.name)
-        result = full_image_analysis(tmp.name, user_id)
-
+    result = full_image_analysis(image_bytes)
+    result["user_id"] = user_id
     return jsonify(result)
 
-# --- Get Meals for User ---
 @app.route("/user-meals", methods=["GET"])
-def user_meals():
+def get_user_meals():
     user_id = request.args.get("user_id")
-    if not user_id:
-        return jsonify({"error": "Missing user_id"}), 400
-
-    meals = list(meals_collection.find({"user_id": user_id}).sort("timestamp", -1))
+    meals = list(meals_collection.find({"user_id": user_id}))
     for meal in meals:
         meal["_id"] = str(meal["_id"])
-        meal["timestamp"] = meal["timestamp"].isoformat()
-        if "image" in meal:
-            meal["image"] = base64.b64encode(meal["image"]).decode("utf-8")
-
     return jsonify(meals)
 
-# --- ✅ NEW: Get Saved Profile for User ---
-@app.route("/profile", methods=["GET"])
-def get_profile():
-    user_id = request.args.get("user_id")
-    if not user_id:
-        return jsonify({"error": "Missing user_id"}), 400
+@app.route("/save-meal", methods=["POST"])
+def save_meal():
+    try:
+        data = request.get_json()
+        required = ["user_id", "dish_prediction", "image_description", "nutrition_info"]
+        if not all(k in data for k in required):
+            return jsonify({"error": "Missing required fields"}), 400
+        meal = {
+            "user_id": data["user_id"],
+            "dish_prediction": data["dish_prediction"],
+            "image_description": data["image_description"],
+            "nutrition_info": data["nutrition_info"],
+            "hidden_ingredients": data.get("hidden_ingredients", ""),
+            "image": data.get("image", None)
+        }
+        meals_collection.insert_one(meal)
+        return jsonify({"message": "Meal saved successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    profile = profiles_collection.find_one({"user_id": user_id})
-    if not profile:
-        return jsonify({"error": "Profile not found"}), 404
-
-    profile["_id"] = str(profile["_id"])
-    return jsonify(profile)
-
-# --- Start Server ---
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)

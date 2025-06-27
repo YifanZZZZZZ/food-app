@@ -36,7 +36,7 @@ struct MealHistoryView: View {
                                         .cornerRadius(10)
                                 }
 
-                                VStack(alignment: .leading) {
+                                VStack(alignment: .leading, spacing: 4) {
                                     Text(meal.dish_prediction)
                                         .foregroundColor(.white)
                                         .bold()
@@ -57,6 +57,9 @@ struct MealHistoryView: View {
             }
             .navigationTitle("Meal History")
             .onAppear {
+                fetchMeals()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MealSaved"))) { _ in
                 fetchMeals()
             }
         }

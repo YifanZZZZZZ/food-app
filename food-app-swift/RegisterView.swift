@@ -1,13 +1,9 @@
 import SwiftUI
 import AuthenticationServices
 
-struct RegisterResponse: Codable {
-    let user_id: String
-    let name: String
-}
-
 struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var session = SessionManager.shared
 
     @State private var name = ""
     @State private var email = ""
@@ -20,9 +16,8 @@ struct RegisterView: View {
     @State private var emailError = ""
     @State private var passwordError = ""
     @State private var confirmPasswordError = ""
-
-    @State private var navigateToProfile = false
     @State private var registrationFailed = false
+    @State private var navigateToProfile = false
 
     var body: some View {
         NavigationStack {
@@ -30,92 +25,83 @@ struct RegisterView: View {
                 Image("LoginBackground")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
-                    .clipped()
+                    .ignoresSafeArea()
                     .overlay(Color.black.opacity(0.45))
                     .blur(radius: 4)
-                    .ignoresSafeArea()
 
-                VStack {
-                    Spacer(minLength: 80)
-
+                VStack(spacing: 28) {
                     Text("Create Your Account")
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 
-                    VStack(spacing: 20) {
-                        textFieldWithValidation("Full Name", text: $name, error: $nameError, validation: validateName)
-                        textFieldWithValidation("Email", text: $email, error: $emailError, validation: validateEmail, keyboardType: .emailAddress)
-
-                        secureFieldWithToggle("Password", text: $password, isSecure: $isSecure, error: $passwordError, validation: validatePassword)
-                        secureFieldWithToggle("Confirm Password", text: $confirmPassword, isSecure: $isConfirmSecure, error: $confirmPasswordError, validation: validateConfirmPassword)
-
-                        Button(action: {
-                            validateAllFields()
-                            if allFieldsValid() {
-                                attemptRegister()
-                            }
-                        }) {
-                            Text("Register")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding()
-                                .frame(width: 280)
-                                .background(Color.orange)
-                                .cornerRadius(14)
-                        }
-
-                        if registrationFailed {
-                            Text("Registration failed. Try again.")
-                                .foregroundColor(.red)
-                        }
-
-                        HStack(spacing: 4) {
-                            Text("Already have an account?")
-                                .foregroundColor(.white.opacity(0.75))
-                            Button(action: { dismiss() }) {
-                                Text("Login")
-                                    .foregroundColor(.orange)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .font(.footnote)
-
-                        NavigationLink("", destination: ProfileSetupView(), isActive: $navigateToProfile).hidden()
+                    Group {
+                        validatedTextField("Full Name", text: $name, error: $nameError, validate: validateName)
+                        validatedTextField("Email", text: $email, error: $emailError, validate: validateEmail, keyboard: .emailAddress)
+                        validatedSecureField("Password", text: $password, isSecure: $isSecure, error: $passwordError, validate: validatePassword)
+                        validatedSecureField("Confirm Password", text: $confirmPassword, isSecure: $isConfirmSecure, error: $confirmPasswordError, validate: validateConfirmPassword)
                     }
 
-                    Spacer()
+                    Button("Register") {
+                        validateAll()
+                        if allValid() {
+                            attemptRegister()
+                        }
+                    }
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(width: 280)
+                    .background(Color.orange)
+                    .cornerRadius(14)
+
+                    if registrationFailed {
+                        Text("Registration failed. Try again.")
+                            .foregroundColor(.red)
+                    }
+
+                    HStack(spacing: 4) {
+                        Text("Already have an account?")
+                            .foregroundColor(.white.opacity(0.75))
+                        Button(action: { dismiss() }) {
+                            Text("Login")
+                                .foregroundColor(.orange)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .font(.footnote)
+
+                    NavigationLink("", destination: ProfileSetupView(), isActive: $navigateToProfile).hidden()
                 }
+                .padding(.top, 40)
             }
             .preferredColorScheme(.dark)
         }
     }
 
-    // MARK: - Validation & Helpers
+    // MARK: - Components
 
-    private func textFieldWithValidation(_ title: String, text: Binding<String>, error: Binding<String>, validation: @escaping () -> Void, keyboardType: UIKeyboardType = .default) -> some View {
+    func validatedTextField(_ title: String, text: Binding<String>, error: Binding<String>, validate: @escaping () -> Void, keyboard: UIKeyboardType = .default) -> some View {
         VStack(spacing: 4) {
             TextField(title, text: text)
-                .keyboardType(keyboardType)
+                .keyboardType(keyboard)
                 .autocapitalization(.none)
                 .padding()
                 .background(Color.white.opacity(0.28))
                 .cornerRadius(14)
                 .foregroundColor(.white)
-                .font(.system(size: 18, weight: .semibold))
                 .frame(width: 280)
-                .onChange(of: text.wrappedValue, initial: false) { _, _ in validation() }
+                .onChange(of: text.wrappedValue, initial: false) { _, _ in validate() }
 
             if !error.wrappedValue.isEmpty {
                 Text(error.wrappedValue)
                     .foregroundColor(.red)
-                    .font(.system(size: 13))
+                    .font(.caption)
                     .frame(width: 280, alignment: .leading)
             }
         }
     }
 
-    private func secureFieldWithToggle(_ title: String, text: Binding<String>, isSecure: Binding<Bool>, error: Binding<String>, validation: @escaping () -> Void) -> some View {
+    func validatedSecureField(_ title: String, text: Binding<String>, isSecure: Binding<Bool>, error: Binding<String>, validate: @escaping () -> Void) -> some View {
         VStack(spacing: 4) {
             HStack {
                 if isSecure.wrappedValue {
@@ -132,59 +118,61 @@ struct RegisterView: View {
             .background(Color.white.opacity(0.28))
             .cornerRadius(14)
             .foregroundColor(.white)
-            .font(.system(size: 18, weight: .semibold))
             .frame(width: 280)
-            .onChange(of: text.wrappedValue, initial: false) { _, _ in validation() }
+            .onChange(of: text.wrappedValue, initial: false) { _, _ in validate() }
 
             if !error.wrappedValue.isEmpty {
                 Text(error.wrappedValue)
                     .foregroundColor(.red)
-                    .font(.system(size: 13))
+                    .font(.caption)
                     .frame(width: 280, alignment: .leading)
             }
         }
     }
 
-    private func validateName() {
-        nameError = name.trimmingCharacters(in: .whitespaces).isEmpty ? "Name is required" : ""
+    // MARK: - Validation
+
+    func validateName() {
+        nameError = name.isEmpty ? "Name is required" : ""
     }
 
-    private func validateEmail() {
+    func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         emailError = trimmed.isEmpty ? "Email is required" :
             (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
     }
 
-    private func validatePassword() {
+    func validatePassword() {
         passwordError = password.count < 6 ? "Password must be at least 6 characters" : ""
     }
 
-    private func validateConfirmPassword() {
+    func validateConfirmPassword() {
         confirmPasswordError = confirmPassword != password ? "Passwords do not match" : ""
     }
 
-    private func validateAllFields() {
+    func validateAll() {
         validateName()
         validateEmail()
         validatePassword()
         validateConfirmPassword()
     }
 
-    private func allFieldsValid() -> Bool {
-        return nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty
+    func allValid() -> Bool {
+        nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty
     }
 
-    private func attemptRegister() {
+    // MARK: - API Call
+
+    func attemptRegister() {
         guard let url = URL(string: "https://food-app-swift.onrender.com/register") else { return }
 
+        let payload = ["name": name, "email": email, "password": password]
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload = ["name": name, "email": email, "password": password]
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, _, _ in
             guard let data = data,
                   let response = try? JSONDecoder().decode(RegisterResponse.self, from: data) else {
                 DispatchQueue.main.async { registrationFailed = true }
@@ -192,7 +180,7 @@ struct RegisterView: View {
             }
 
             DispatchQueue.main.async {
-                SessionManager.shared.login(id: response.user_id, name: response.name)
+                session.login(id: response.user_id, name: response.name)
                 navigateToProfile = true
             }
         }.resume()
