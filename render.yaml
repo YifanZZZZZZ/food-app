@@ -6,4 +6,6 @@ services:
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+      - key: MONGODB_URI
+        sync: false
     plan: free
