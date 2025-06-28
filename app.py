@@ -4,12 +4,15 @@ from pymongo import MongoClient
 from model_pipeline import full_image_analysis
 import base64
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 
 app = Flask(__name__)
 CORS(app)
 
 # MongoDB setup (replace credentials if needed)
-client = MongoClient("mongodb+srv://<username>:<password>@cluster.mongodb.net/")
+client = MongoClient(os.environ.get("MONGODB_URI"))
 db = client["food_app"]
 meals_collection = db["meals"]
 users_collection = db["users"]
