@@ -6,6 +6,7 @@ import os
 from pymongo import MongoClient
 from model_pipeline import full_image_analysis
 import base64
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -107,13 +108,23 @@ def get_profile():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
+        if "image" not in request.files:
+            return jsonify({"error": "No image part in the request"}), 400
+
         image_file = request.files["image"]
         user_id = request.form.get("user_id", "guest")
-        image_bytes = image_file.read()
-        result = full_image_analysis(image_bytes)
+
+        image_path = f"/tmp/{image_file.filename}"
+        image_file.save(image_path)
+
+        print(f"📸 Saved image to: {image_path}")
+        result = full_image_analysis(image_path, user_id)
         result["user_id"] = user_id
         return jsonify(result), 200
+
     except Exception as e:
+        print("❌ analyze Exception:", str(e))
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 # -------------------------------
