@@ -37,7 +37,9 @@ struct UploadMealView: View {
                             if let data = try? await newItem?.loadTransferable(type: Data.self),
                                let uiImage = UIImage(data: data) {
                                 self.selectedImage = uiImage
-                                analyzeImage()
+                                pingServerBeforeAnalyze {
+                                    analyzeImage()
+                                }
                             }
                         }
                     }
@@ -131,6 +133,18 @@ struct UploadMealView: View {
         }
     }
 
+    func pingServerBeforeAnalyze(completion: @escaping () -> Void) {
+        let url = URL(string: "https://food-app-swift.onrender.com/")!
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            DispatchQueue.main.async {
+                completion()
+            }
+        }.resume()
+    }
+
     func analyzeImage() {
         guard let image = selectedImage else { return }
         isLoading = true
@@ -143,6 +157,7 @@ struct UploadMealView: View {
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 120  // Increased timeout
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -161,7 +176,12 @@ struct UploadMealView: View {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 90
+        config.timeoutIntervalForResource = 120
+        let session = URLSession(configuration: config)
+
+        session.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async { self.isLoading = false }
 
             guard let data = data, error == nil else { return }

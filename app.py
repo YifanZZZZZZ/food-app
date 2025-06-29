@@ -7,13 +7,14 @@ from pymongo import MongoClient
 from model_pipeline import full_image_analysis
 import base64
 import traceback
+import time
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 
 # MongoDB connection
 client = MongoClient(os.getenv("MONGO_URI"))
@@ -21,6 +22,13 @@ db = client[os.getenv("MONGO_DB", "food-app-swift")]
 users_collection = db["users"]
 profiles_collection = db["profiles"]
 meals_collection = db["meals"]
+
+# -------------------------------
+# 🔗 Health Check
+# -------------------------------
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/")
 def home():
@@ -114,12 +122,18 @@ def analyze():
         image_file = request.files["image"]
         user_id = request.form.get("user_id", "guest")
 
-        image_path = f"/tmp/{image_file.filename}"
-        image_file.save(image_path)
+        # Create unique image filename
+        filename = f"image_{int(time.time())}.png"
+        image_path = os.path.join("/tmp", filename)
 
+        # Save image to disk
+        image_file.save(image_path)
         print(f"📸 Saved image to: {image_path}")
+
+        # Run full Gemini analysis
         result = full_image_analysis(image_path, user_id)
         result["user_id"] = user_id
+        print(f"✅ Gemini analysis completed for {filename}")
         return jsonify(result), 200
 
     except Exception as e:
@@ -174,4 +188,4 @@ def get_user_meals():
 # -------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, threaded=True)
