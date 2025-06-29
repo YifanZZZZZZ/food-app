@@ -14,7 +14,7 @@ app = Flask(__name__)
 CORS(app)
 
 # MongoDB connection
-client = MongoClient(os.environ.get("MONGODB_URI"))
+client = MongoClient(os.environ.get("MONGO_URI"))
 db = client["food_app"]
 meals_collection = db["meals"]
 users_collection = db["users"]
