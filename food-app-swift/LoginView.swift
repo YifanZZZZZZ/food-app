@@ -1,7 +1,6 @@
 import SwiftUI
 import AuthenticationServices
 
-// Combine LoginResponse here to avoid redeclaration elsewhere
 struct LoginResponse: Codable {
     let user_id: String
     let name: String
@@ -107,7 +106,9 @@ struct LoginView: View {
                             validateEmail()
                             validatePassword()
                             if emailError.isEmpty && passwordError.isEmpty {
-                                attemptLogin()
+                                pingServerBeforeLogin {
+                                    attemptLogin()
+                                }
                             }
                         }
                         .font(.system(size: 18, weight: .bold))
@@ -189,13 +190,26 @@ struct LoginView: View {
             (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
     }
 
+    // MARK: - /ping First
+    private func pingServerBeforeLogin(completion: @escaping () -> Void) {
+        guard let pingURL = URL(string: "https://food-app-swift.onrender.com/ping") else {
+            completion()
+            return
+        }
+
+        var request = URLRequest(url: pingURL)
+        request.timeoutInterval = 10
+
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            DispatchQueue.main.async {
+                completion()
+            }
+        }.resume()
+    }
+
     // MARK: - Login API Call
     private func attemptLogin() {
         guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let payload = ["email": email, "password": password]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
@@ -203,9 +217,18 @@ struct LoginView: View {
             return
         }
 
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
+        request.timeoutInterval = 60
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 90
+        let session = URLSession(configuration: config)
+
+        session.dataTask(with: request) { data, response, error in
             if let error = error {
                 print("❌ Login Error: \(error.localizedDescription)")
                 DispatchQueue.main.async {
@@ -217,7 +240,6 @@ struct LoginView: View {
 
             guard let httpResponse = response as? HTTPURLResponse,
                   let data = data else {
-                print("❌ Invalid response")
                 DispatchQueue.main.async {
                     loginFailed = true
                     loginErrorMessage = "Unexpected server response."
@@ -235,7 +257,6 @@ struct LoginView: View {
                         navigate = true
                     }
                 } else {
-                    print("❌ Failed to decode response")
                     DispatchQueue.main.async {
                         loginFailed = true
                         loginErrorMessage = "Login succeeded but decoding failed."
