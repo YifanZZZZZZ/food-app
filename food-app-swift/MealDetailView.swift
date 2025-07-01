@@ -1,85 +1,78 @@
-//
-//  MealDetailView.swift
-//  food-app-swift
-//
-//  Created by Utsav Doshi on 6/20/25.
-//
-
 import SwiftUI
 
 struct MealDetailView: View {
+    let meal: Meal
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Image
-                Rectangle()
-                    .fill(Color.orange)
-                    .frame(height: 220)
-                    .cornerRadius(14)
-                    .padding(.horizontal)
+                // ✅ Dynamic Image (if available)
+                if let base64 = meal.image_full, let uiImage = decodeBase64ToUIImage(base64) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 220)
+                        .cornerRadius(14)
+                        .padding(.horizontal)
+                }
+                else {
+                    Rectangle()
+                        .fill(Color.orange.opacity(0.7))
+                        .frame(height: 220)
+                        .cornerRadius(14)
+                        .padding(.horizontal)
+                }
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Grilled Chicken Bowl")
+                    // ✅ Dish Title
+                    Text(meal.dish_prediction)
                         .font(.title3)
                         .bold()
                         .foregroundColor(.white)
 
-                    Text("Logged on: Apr 24 • 1:00 PM")
+                    Text("🕒 Logged Meal")
                         .foregroundColor(.white.opacity(0.7))
                         .font(.caption)
 
-                    // Ingredients
+                    // ✅ Ingredients Section
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Ingredients")
+                        Text("🧾 Ingredients")
                             .foregroundColor(.orange)
                             .fontWeight(.semibold)
 
-                        ForEach(["Chicken", "Spinach", "Brown Rice", "Avocado"], id: \.self) {
-                            Text("• \($0)").foregroundColor(.white)
+                        ForEach(meal.image_description.split(separator: "\n"), id: \.self) { line in
+                            Text("• \(line)").foregroundColor(.white)
                         }
                     }
 
-                    // Macronutrients
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Macronutrients")
-                            .foregroundColor(.orange)
-                            .fontWeight(.semibold)
+                    // ✅ Hidden Ingredients
+                    if let hidden = meal.hidden_ingredients, !hidden.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("🫙 Hidden Ingredients")
+                                .foregroundColor(.pink)
+                                .fontWeight(.semibold)
 
-                        HStack {
-                            VStack {
-                                Text("Carbs")
-                                Text("40g")
+                            ForEach(hidden.split(separator: "\n"), id: \.self) { line in
+                                Text("• \(line)").foregroundColor(.white.opacity(0.9))
                             }
-                            .frame(maxWidth: .infinity)
-                            VStack {
-                                Text("Protein")
-                                Text("35g")
-                            }
-                            .frame(maxWidth: .infinity)
-                            VStack {
-                                Text("Fats")
-                                Text("18g")
-                            }
-                            .frame(maxWidth: .infinity)
                         }
-                        .foregroundColor(.white)
-                        .font(.caption)
                     }
 
-                    // Gemini notes
+                    // ✅ Nutrition Info
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Notes")
-                            .foregroundColor(.orange)
+                        Text("🍎 Nutrition Info")
+                            .foregroundColor(.green)
                             .fontWeight(.semibold)
 
-                        Text("⚠️ High in sodium. Consider reducing added salt or processed sauces.")
-                            .foregroundColor(.white.opacity(0.85))
-                            .font(.footnote)
+                        ForEach(meal.nutrition_info.split(separator: "\n"), id: \.self) { line in
+                            Text("• \(line)").foregroundColor(.white.opacity(0.9))
+                        }
                     }
 
+                    // 🔧 Action Buttons (stubbed for now)
                     HStack {
                         Button("Edit") {
-                            // future logic
+                            // TODO: Add edit logic
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -88,11 +81,11 @@ struct MealDetailView: View {
                         .cornerRadius(10)
 
                         Button("Delete") {
-                            // delete logic
+                            // TODO: Add delete logic
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.red.opacity(0.8))
+                        .background(Color.red.opacity(0.85))
                         .foregroundColor(.white)
                         .cornerRadius(10)
                     }
@@ -105,5 +98,12 @@ struct MealDetailView: View {
         .preferredColorScheme(.dark)
         .navigationTitle("Meal Detail")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Helper
+    func decodeBase64ToUIImage(_ base64: String) -> UIImage? {
+        guard let data = Data(base64Encoded: base64),
+              let image = UIImage(data: data) else { return nil }
+        return image
     }
 }

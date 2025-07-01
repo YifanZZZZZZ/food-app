@@ -1,88 +1,109 @@
 import SwiftUI
 
 struct MealHistoryView: View {
-    @ObservedObject var session = SessionManager.shared
     @State private var meals: [Meal] = []
-
-    struct Meal: Identifiable, Decodable {
-        let _id: String
-        var id: String { _id }
-        let dish_prediction: String
-        let nutrition_info: String
-        let image_description: String
-        let hidden_ingredients: String?
-        let image: String?
-    }
+    @State private var totalCalories: Int = 0
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 20) {
-                        ForEach(meals) { meal in
-                            HStack(spacing: 12) {
-                                if let base64 = meal.image,
-                                   let image = decodeBase64ToUIImage(base64) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 70, height: 70)
-                                        .cornerRadius(10)
-                                } else {
-                                    Rectangle()
-                                        .fill(Color.orange.opacity(0.7))
-                                        .frame(width: 70, height: 70)
-                                        .cornerRadius(10)
-                                }
 
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(meal.dish_prediction)
-                                        .foregroundColor(.white)
-                                        .bold()
+                VStack(spacing: 20) {
+                    Text("Meal History")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
 
-                                    Text(meal.nutrition_info.components(separatedBy: "\n").first ?? "")
-                                        .foregroundColor(.orange)
-                                        .font(.caption)
+                    Text("📊 Total Calories: \(totalCalories)")
+                        .foregroundColor(.yellow)
+                        .font(.headline)
+
+                    if meals.isEmpty {
+                        Spacer()
+                        ProgressView("Fetching Meals...")
+                            .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 20) {
+                                ForEach(meals, id: \.dish_prediction) { meal in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        if let image = decodeBase64ToUIImage(base64String: meal.image ?? "") {
+                                            Image(uiImage: image)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(height: 180)
+                                                .clipped()
+                                                .cornerRadius(12)
+                                        }
+
+                                        Text("🍽️ \(meal.dish_prediction)")
+                                            .foregroundColor(.white)
+                                            .font(.headline)
+
+                                        if let cal = extractCalories(from: meal.nutrition_info) {
+                                            Text("🔥 \(cal) kcal")
+                                                .foregroundColor(.orange)
+                                        }
+
+                                        Text(meal.image_description)
+                                            .font(.caption)
+                                            .foregroundColor(.white.opacity(0.7))
+                                    }
+                                    .padding()
+                                    .background(Color.white.opacity(0.05))
+                                    .cornerRadius(14)
+                                    .shadow(radius: 2)
                                 }
-                                Spacer()
                             }
-                            .padding()
-                            .background(Color.white.opacity(0.05))
-                            .cornerRadius(14)
+                            .padding(.horizontal)
                         }
                     }
-                    .padding()
+
+                    Spacer()
                 }
+                .padding()
             }
-            .navigationTitle("Meal History")
-            .onAppear {
-                fetchMeals()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MealSaved"))) { _ in
-                fetchMeals()
-            }
+            .preferredColorScheme(.dark)
+            .onAppear(perform: fetchMeals)
         }
     }
 
+    // MARK: - API Call
     func fetchMeals() {
-        guard let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(session.userID)") else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data,
-               let decoded = try? JSONDecoder().decode([Meal].self, from: data) {
-                DispatchQueue.main.async {
-                    meals = decoded
-                }
-            } else {
-                print("❌ Failed to decode meal history")
+        let userId = SessionManager.shared.userID
+        guard !userId.isEmpty else { return }
+
+        guard let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userId)") else { return }
+
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            guard let data = data,
+                  let decoded = try? JSONDecoder().decode([Meal].self, from: data) else {
+                print("❌ Failed to decode meals")
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.meals = decoded
+                self.totalCalories = decoded.compactMap { extractCalories(from: $0.nutrition_info) }.reduce(0, +)
             }
         }.resume()
     }
 
-    func decodeBase64ToUIImage(_ base64: String) -> UIImage? {
-        if let data = Data(base64Encoded: base64),
-           let image = UIImage(data: data) {
-            return image
+
+    // MARK: - Helpers
+    func decodeBase64ToUIImage(base64String: String) -> UIImage? {
+        guard let data = Data(base64Encoded: base64String),
+              let image = UIImage(data: data) else { return nil }
+        return image
+    }
+
+    func extractCalories(from text: String) -> Int? {
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "|")
+            if parts.count == 4, parts[0].lowercased().contains("calories") {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces))
+            }
         }
         return nil
     }

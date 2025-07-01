@@ -203,14 +203,19 @@ struct UploadMealView: View {
         guard let dish = detectedDish else { return }
         let userId = UserDefaults.standard.string(forKey: "user_id") ?? "guest"
 
+        let fullImageBase64 = selectedImage?.jpegData(compressionQuality: 0.9)?.base64EncodedString() ?? ""
+        let thumbnailBase64 = selectedImage?.jpegData(compressionQuality: 0.1)?.base64EncodedString() ?? ""
+
         let payload: [String: Any] = [
             "user_id": userId,
             "dish_prediction": dish,
             "image_description": visibleIngredientLines.joined(separator: "\n"),
             "hidden_ingredients": hiddenIngredientLines.joined(separator: "\n"),
             "nutrition_info": rawNutritionInfo,
-            "image": selectedImage?.jpegData(compressionQuality: 0.6)?.base64EncodedString() ?? ""
+            "image_full": fullImageBase64,
+            "image_thumb": thumbnailBase64
         ]
+
 
         guard let url = URL(string: "https://food-app-swift.onrender.com/save-meal"),
               let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
