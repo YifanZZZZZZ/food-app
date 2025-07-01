@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -8,6 +7,8 @@ from model_pipeline import full_image_analysis
 import base64
 import traceback
 import time
+from io import BytesIO
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
@@ -142,6 +143,22 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 # -------------------------------
+# 📦 Helper: Compress base64 image
+# -------------------------------
+def compress_base64_image(base64_str, quality=5):
+    try:
+        image_data = base64.b64decode(base64_str)
+        image = Image.open(BytesIO(image_data)).convert("RGB")
+
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=quality)
+        compressed_data = buffer.getvalue()
+        return base64.b64encode(compressed_data).decode("utf-8")
+    except Exception as e:
+        print("❌ Compression Error:", str(e))
+        return None
+
+# -------------------------------
 # 🍽️ Save Meal
 # -------------------------------
 @app.route("/save-meal", methods=["POST"])
@@ -153,18 +170,19 @@ def save_meal():
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
 
-        image_full = data.get("image_full")
-        image_thumb = data.get("image_thumb")
-        
+        image = data.get("image", None)
+        image_full = data.get("image_full") or image
+        image_thumb = data.get("image_thumb") or (compress_base64_image(image) if image else None)
+
         meal = {
-       "user_id": data["user_id"],
-        "dish_prediction": data["dish_prediction"],
-        "image_description": data["image_description"],
-     "nutrition_info": data["nutrition_info"],
-        "hidden_ingredients": data.get("hidden_ingredients", ""),
-    "image_full": data.get("image_full", None),     # full-quality image
-    "image_thumb": data.get("image_thumb", None)    # compressed image for fast loading
-}
+            "user_id": data["user_id"],
+            "dish_prediction": data["dish_prediction"],
+            "image_description": data["image_description"],
+            "nutrition_info": data["nutrition_info"],
+            "hidden_ingredients": data.get("hidden_ingredients", ""),
+            "image_full": image_full,
+            "image_thumb": image_thumb
+        }
 
         meals_collection.insert_one(meal)
         return jsonify({"message": "Meal saved successfully"}), 200
