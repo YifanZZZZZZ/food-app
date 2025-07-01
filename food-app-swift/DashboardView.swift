@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct DashboardView: View {
-    @State private var showUpload = false
-    @State private var showSummary = false
+    @State private var meals: [Meal] = []
+    @State private var totalCalories = 0
+    @State private var isLoading = false
 
     var body: some View {
         NavigationStack {
@@ -22,36 +23,63 @@ struct DashboardView: View {
                         .padding(.horizontal)
                         .padding(.top, 40)
 
-                        // Logged Meals (horizontal)
+                        // Meals Section
                         VStack(alignment: .leading) {
                             Text("Today's Meals")
                                 .foregroundColor(.white)
                                 .font(.headline)
                                 .padding(.horizontal)
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 14) {
-                                    ForEach(1..<4) { i in
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            Rectangle()
-                                                .fill(Color.orange.opacity(0.9))
-                                                .frame(width: 140, height: 90)
-                                                .cornerRadius(12)
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                                    .frame(maxWidth: .infinity)
+                            } else if meals.isEmpty {
+                                Text("No meals logged yet.")
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(.horizontal)
+                            } else {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 14) {
+                                        ForEach(meals) { meal in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                if let uiImage = decodeBase64ToUIImage(meal.image_thumb ?? "") {
+                                                    Image(uiImage: uiImage)
+                                                        .resizable()
+                                                        .scaledToFill()
+                                                        .frame(width: 140, height: 90)
+                                                        .clipped()
+                                                        .cornerRadius(12)
+                                                } else {
+                                                    Rectangle()
+                                                        .fill(Color.orange.opacity(0.9))
+                                                        .frame(width: 140, height: 90)
+                                                        .cornerRadius(12)
+                                                }
 
-                                            Text("Meal \(i)")
-                                                .foregroundColor(.white)
+                                                Text(meal.dish_prediction)
+                                                    .foregroundColor(.white)
+                                                    .font(.subheadline)
 
-                                            Text("350 kcal")
-                                                .foregroundColor(.white.opacity(0.7))
-                                                .font(.caption2)
+                                                Text("\(extractCalories(from: meal.nutrition_info) ?? 0) kcal")
+                                                    .foregroundColor(.white.opacity(0.7))
+                                                    .font(.caption2)
+                                            }
+                                            .padding()
+                                            .background(Color.white.opacity(0.05))
+                                            .cornerRadius(12)
                                         }
-                                        .padding()
-                                        .background(Color.white.opacity(0.05))
-                                        .cornerRadius(12)
                                     }
+                                    .padding(.horizontal)
                                 }
-                                .padding(.horizontal)
                             }
+                        }
+
+                        // Total Calories
+                        if totalCalories > 0 {
+                            Text("🔥 Total Calories Today: \(totalCalories) kcal")
+                                .foregroundColor(.yellow)
+                                .padding(.horizontal)
                         }
 
                         // Progress Bars
@@ -127,6 +155,63 @@ struct DashboardView: View {
             .preferredColorScheme(.dark)
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                fetchMeals()
+            }
         }
     }
+
+    // MARK: - Networking
+    func fetchMeals() {
+        guard let userId = Optional(SessionManager.shared.userID), !userId.isEmpty,
+              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userId)") else {
+            return
+        }
+
+        isLoading = true
+
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            isLoading = false
+            guard let data = data else { return }
+
+            if let fetchedMeals = try? JSONDecoder().decode([Meal].self, from: data) {
+                DispatchQueue.main.async {
+                    self.meals = fetchedMeals
+                    self.totalCalories = fetchedMeals.reduce(0) {
+                        $0 + (extractCalories(from: $1.nutrition_info) ?? 0)
+                    }
+                }
+            }
+        }.resume()
+    }
+
+    func decodeBase64ToUIImage(_ base64String: String) -> UIImage? {
+        guard let data = Data(base64Encoded: base64String),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+        return image
+    }
+
+    func extractCalories(from nutritionText: String) -> Int? {
+        for line in nutritionText.split(separator: "\n") {
+            let parts = line.split(separator: "|")
+            if parts.count == 4, parts[0].lowercased().contains("calories") {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces))
+            }
+        }
+        return nil
+    }
 }
+
+struct Meal: Codable, Identifiable {
+    var id = UUID()
+    let user_id: String
+    let dish_prediction: String
+    let image_description: String
+    let nutrition_info: String
+    let image_thumb: String?        // for dashboard and history
+    let image_full: String?         // for full-resolution detail view
+    let hidden_ingredients: String?
+}
+

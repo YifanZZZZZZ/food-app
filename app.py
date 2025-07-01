@@ -153,14 +153,19 @@ def save_meal():
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
 
+        image_full = data.get("image_full")
+        image_thumb = data.get("image_thumb")
+        
         meal = {
-            "user_id": data["user_id"],
-            "dish_prediction": data["dish_prediction"],
-            "image_description": data["image_description"],
-            "nutrition_info": data["nutrition_info"],
-            "hidden_ingredients": data.get("hidden_ingredients", ""),
-            "image": data.get("image", None)
-        }
+       "user_id": data["user_id"],
+        "dish_prediction": data["dish_prediction"],
+        "image_description": data["image_description"],
+     "nutrition_info": data["nutrition_info"],
+        "hidden_ingredients": data.get("hidden_ingredients", ""),
+    "image_full": data.get("image_full", None),     # full-quality image
+    "image_thumb": data.get("image_thumb", None)    # compressed image for fast loading
+}
+
         meals_collection.insert_one(meal)
         return jsonify({"message": "Meal saved successfully"}), 200
     except Exception as e:
