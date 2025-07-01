@@ -26,34 +26,8 @@ struct MealHistoryView: View {
                     } else {
                         ScrollView {
                             LazyVStack(spacing: 20) {
-                                ForEach(meals, id: \.dish_prediction) { meal in
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        if let image = decodeBase64ToUIImage(base64String: meal.image ?? "") {
-                                            Image(uiImage: image)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(height: 180)
-                                                .clipped()
-                                                .cornerRadius(12)
-                                        }
-
-                                        Text("🍽️ \(meal.dish_prediction)")
-                                            .foregroundColor(.white)
-                                            .font(.headline)
-
-                                        if let cal = extractCalories(from: meal.nutrition_info) {
-                                            Text("🔥 \(cal) kcal")
-                                                .foregroundColor(.orange)
-                                        }
-
-                                        Text(meal.image_description)
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.7))
-                                    }
-                                    .padding()
-                                    .background(Color.white.opacity(0.05))
-                                    .cornerRadius(14)
-                                    .shadow(radius: 2)
+                                ForEach(meals) { meal in
+                                    mealCard(for: meal)
                                 }
                             }
                             .padding(.horizontal)
@@ -67,6 +41,39 @@ struct MealHistoryView: View {
             .preferredColorScheme(.dark)
             .onAppear(perform: fetchMeals)
         }
+    }
+
+    // MARK: - Meal Card View
+    @ViewBuilder
+    func mealCard(for meal: Meal) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let imgBase64 = meal.image_thumb,
+               let image = decodeBase64ToUIImage(base64String: imgBase64) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 180)
+                    .clipped()
+                    .cornerRadius(12)
+            }
+
+            Text("🍽️ \(meal.dish_prediction)")
+                .foregroundColor(.white)
+                .font(.headline)
+
+            if let cal = extractCalories(from: meal.nutrition_info) {
+                Text("🔥 \(cal) kcal")
+                    .foregroundColor(.orange)
+            }
+
+            Text(meal.image_description)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .padding()
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(14)
+        .shadow(radius: 2)
     }
 
     // MARK: - API Call
@@ -89,7 +96,6 @@ struct MealHistoryView: View {
             }
         }.resume()
     }
-
 
     // MARK: - Helpers
     func decodeBase64ToUIImage(base64String: String) -> UIImage? {
