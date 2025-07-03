@@ -1,8 +1,10 @@
+// MARK: - MealHistoryView.swift
 import SwiftUI
 
 struct MealHistoryView: View {
     @State private var meals: [Meal] = []
     @State private var totalCalories: Int = 0
+    @State private var isLoading = false
 
     var body: some View {
         NavigationStack {
@@ -14,14 +16,21 @@ struct MealHistoryView: View {
                         .font(.title2.bold())
                         .foregroundColor(.white)
 
-                    Text("📊 Total Calories: \(totalCalories)")
-                        .foregroundColor(.yellow)
-                        .font(.headline)
-
-                    if meals.isEmpty {
-                        Spacer()
+                    if isLoading {
                         ProgressView("Fetching Meals...")
                             .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                    } else {
+                        Text("📊 Total Calories: \(totalCalories)")
+                            .foregroundColor(.yellow)
+                            .font(.headline)
+                    }
+
+                    if meals.isEmpty && !isLoading {
+                        Spacer()
+                        Text("No meals found. Upload your first dish!")
+                            .foregroundColor(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding()
                         Spacer()
                     } else {
                         ScrollView {
@@ -40,6 +49,9 @@ struct MealHistoryView: View {
             }
             .preferredColorScheme(.dark)
             .onAppear(perform: fetchMeals)
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MealSaved"))) { _ in
+                fetchMeals()
+            }
         }
     }
 
@@ -66,6 +78,13 @@ struct MealHistoryView: View {
                     .foregroundColor(.orange)
             }
 
+            if let savedAt = meal.saved_at,
+               let date = ISO8601DateFormatter().date(from: savedAt) {
+                Text("🕒 \(formattedDate(date))")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.6))
+            }
+
             Text(meal.image_description)
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.7))
@@ -78,13 +97,18 @@ struct MealHistoryView: View {
 
     // MARK: - API Call
     func fetchMeals() {
-        let userId = SessionManager.shared.userID
-        guard !userId.isEmpty else { return }
+        guard !SessionManager.shared.userID.isEmpty,
+              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(SessionManager.shared.userID)") else {
+            print("⚠️ Invalid user ID or URL")
+            return
+        }
 
-        guard let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userId)") else { return }
+        isLoading = true
 
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data,
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            defer { DispatchQueue.main.async { isLoading = false } }
+
+            guard let data = data, error == nil,
                   let decoded = try? JSONDecoder().decode([Meal].self, from: data) else {
                 print("❌ Failed to decode meals")
                 return
@@ -112,5 +136,11 @@ struct MealHistoryView: View {
             }
         }
         return nil
+    }
+
+    func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter.string(from: date)
     }
 }

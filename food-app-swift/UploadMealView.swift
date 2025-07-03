@@ -1,5 +1,42 @@
+// MARK: - UploadMealView.swift
 import SwiftUI
 import PhotosUI
+
+// Additional Structs & Helpers (auto-inserted)
+
+struct GeminiResult: Codable {
+    let image_description: String
+    let dish_prediction: String
+    let hidden_ingredients: String?
+    let nutrition_info: String
+}
+
+func parseIngredientLines(from text: String) -> [String] {
+    text.split(separator: "\n").compactMap { line in
+        let parts = line.split(separator: "|")
+        guard parts.count == 4 else { return nil }
+        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+    }
+}
+
+func parseNutritionLines(from text: String) -> [String] {
+    text.split(separator: "\n").compactMap { line in
+        let parts = line.split(separator: "|")
+        guard parts.count == 4 else { return nil }
+        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+    }
+}
+
+func extractCalories(from text: String) -> Int? {
+    for line in text.split(separator: "\n") {
+        let parts = line.split(separator: "|")
+        if parts.count == 4, parts[0].lowercased().contains("calories") {
+            return Int(parts[1].trimmingCharacters(in: .whitespaces))
+        }
+    }
+    return nil
+}
+
 
 struct UploadMealView: View {
     @State private var selectedImage: UIImage?
@@ -11,7 +48,9 @@ struct UploadMealView: View {
     @State private var nutritionLines: [String] = []
     @State private var rawNutritionInfo: String = ""
     @State private var calories: Int?
-    @State private var showSaveAlert = false
+    @State private var showToast = false
+
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationStack {
@@ -87,13 +126,6 @@ struct UploadMealView: View {
                                         ForEach(nutritionLines, id: \.self) {
                                             Text("• \($0)").foregroundColor(.white.opacity(0.9))
                                         }
-                                    } else if !rawNutritionInfo.isEmpty {
-                                        Text("🍎 Nutrition Info (Raw Output):")
-                                            .font(.headline)
-                                            .foregroundColor(.yellow)
-                                        Text(rawNutritionInfo)
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.6))
                                     }
 
                                     if let cal = calories {
@@ -102,14 +134,9 @@ struct UploadMealView: View {
                                     }
 
                                     HStack {
-                                        Button("Edit Ingredients") {}
-                                            .foregroundColor(.orange)
-
                                         Spacer()
-
                                         Button("Save to Diary") {
                                             saveMealToBackend()
-                                            showSaveAlert = true
                                         }
                                         .foregroundColor(.green)
                                     }
@@ -125,11 +152,23 @@ struct UploadMealView: View {
                     Spacer()
                 }
                 .padding()
+
+                // Toast Notification
+                VStack {
+                    if showToast {
+                        Text("Meal saved!")
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Color.green)
+                            .cornerRadius(12)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .padding(.bottom, 40)
+                    }
+                    Spacer()
+                }
             }
             .preferredColorScheme(.dark)
-            .alert("Saved!", isPresented: $showSaveAlert) {
-                Button("OK", role: .cancel) { }
-            }
         }
     }
 
@@ -139,9 +178,7 @@ struct UploadMealView: View {
         request.timeoutInterval = 10
 
         URLSession.shared.dataTask(with: request) { _, _, _ in
-            DispatchQueue.main.async {
-                completion()
-            }
+            DispatchQueue.main.async { completion() }
         }.resume()
     }
 
@@ -157,7 +194,7 @@ struct UploadMealView: View {
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 120  // Increased timeout
+        request.timeoutInterval = 120
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -213,9 +250,9 @@ struct UploadMealView: View {
             "hidden_ingredients": hiddenIngredientLines.joined(separator: "\n"),
             "nutrition_info": rawNutritionInfo,
             "image_full": fullImageBase64,
-            "image_thumb": thumbnailBase64
+            "image_thumb": thumbnailBase64,
+            "saved_at": ISO8601DateFormatter().string(from: Date())
         ]
-
 
         guard let url = URL(string: "https://food-app-swift.onrender.com/save-meal"),
               let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
@@ -229,43 +266,12 @@ struct UploadMealView: View {
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
+                    showToast = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        dismiss()
+                    }
                 }
             }
         }.resume()
     }
-}
-
-// MARK: - Helpers
-
-struct GeminiResult: Codable {
-    let image_description: String
-    let dish_prediction: String
-    let hidden_ingredients: String?
-    let nutrition_info: String
-}
-
-func parseIngredientLines(from text: String) -> [String] {
-    text.split(separator: "\n").compactMap { line in
-        let parts = line.split(separator: "|")
-        guard parts.count == 4 else { return nil }
-        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-    }
-}
-
-func parseNutritionLines(from text: String) -> [String] {
-    text.split(separator: "\n").compactMap { line in
-        let parts = line.split(separator: "|")
-        guard parts.count == 4 else { return nil }
-        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-    }
-}
-
-func extractCalories(from text: String) -> Int? {
-    for line in text.split(separator: "\n") {
-        let parts = line.split(separator: "|")
-        if parts.count == 4, parts[0].lowercased().contains("calories") {
-            return Int(parts[1].trimmingCharacters(in: .whitespaces))
-        }
-    }
-    return nil
 }

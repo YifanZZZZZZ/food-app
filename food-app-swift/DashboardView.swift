@@ -1,3 +1,4 @@
+// MARK: - DashboardView.swift
 import SwiftUI
 
 struct DashboardView: View {
@@ -8,124 +9,53 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        // Greeting
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("👋 Welcome Back!")
-                                .font(.title2)
-                                .foregroundColor(.white)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(meals.indices, id: \ .self) { index in
+                                let meal = meals[index]
+                                VStack(alignment: .leading, spacing: 6) {
+                                    if let uiImage = decodeBase64ToUIImage(meal.image_thumb ?? "") {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 140, height: 90)
+                                            .clipped()
+                                            .cornerRadius(12)
+                                    } else {
+                                        Rectangle()
+                                            .fill(Color.orange.opacity(0.9))
+                                            .frame(width: 140, height: 90)
+                                            .cornerRadius(12)
+                                    }
 
-                            Text("Here’s your nutrition overview for today")
-                                .foregroundColor(.white.opacity(0.7))
-                                .font(.footnote)
+                                    Text(meal.dish_prediction)
+                                        .foregroundColor(.white)
+                                        .font(.subheadline)
+
+                                    Text("\(extractCalories(from: meal.nutrition_info) ?? 0) kcal")
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .font(.caption2)
+
+                                    if let savedAt = meal.saved_at,
+                                       let date = ISO8601DateFormatter().date(from: savedAt) {
+                                        Text("🕒 \(formattedDate(date))")
+                                            .font(.caption2)
+                                            .foregroundColor(.white.opacity(0.6))
+                                    }
+                                }
+                                .padding()
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+                                .id(index)
+                            }
                         }
                         .padding(.horizontal)
-                        .padding(.top, 40)
-
-                        // Meals Section
-                        VStack(alignment: .leading) {
-                            Text("Today's Meals")
-                                .foregroundColor(.white)
-                                .font(.headline)
-                                .padding(.horizontal)
-
-                            if isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                                    .frame(maxWidth: .infinity)
-                            } else if meals.isEmpty {
-                                Text("No meals logged yet.")
-                                    .foregroundColor(.white.opacity(0.6))
-                                    .padding(.horizontal)
-                            } else {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 14) {
-                                        ForEach(meals) { meal in
-                                            VStack(alignment: .leading, spacing: 6) {
-                                                if let uiImage = decodeBase64ToUIImage(meal.image_thumb ?? "") {
-                                                    Image(uiImage: uiImage)
-                                                        .resizable()
-                                                        .scaledToFill()
-                                                        .frame(width: 140, height: 90)
-                                                        .clipped()
-                                                        .cornerRadius(12)
-                                                } else {
-                                                    Rectangle()
-                                                        .fill(Color.orange.opacity(0.9))
-                                                        .frame(width: 140, height: 90)
-                                                        .cornerRadius(12)
-                                                }
-
-                                                Text(meal.dish_prediction)
-                                                    .foregroundColor(.white)
-                                                    .font(.subheadline)
-
-                                                Text("\(extractCalories(from: meal.nutrition_info) ?? 0) kcal")
-                                                    .foregroundColor(.white.opacity(0.7))
-                                                    .font(.caption2)
-                                            }
-                                            .padding()
-                                            .background(Color.white.opacity(0.05))
-                                            .cornerRadius(12)
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                }
-                            }
+                    }
+                    .onChange(of: meals.count) { _, _ in
+                        withAnimation {
+                            proxy.scrollTo(meals.count - 1, anchor: .trailing)
                         }
-
-                        // Total Calories
-                        if totalCalories > 0 {
-                            Text("🔥 Total Calories Today: \(totalCalories) kcal")
-                                .foregroundColor(.yellow)
-                                .padding(.horizontal)
-                        }
-
-                        // Progress Bars
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Daily Nutrients")
-                                .foregroundColor(.white)
-                                .font(.headline)
-                                .padding(.horizontal)
-
-                            ForEach(["Calories", "Protein", "Carbs", "Fat"], id: \.self) { nutrient in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(nutrient)
-                                        .foregroundColor(.white.opacity(0.8))
-                                        .font(.caption)
-
-                                    ProgressView(value: 0.5)
-                                        .progressViewStyle(LinearProgressViewStyle(tint: .orange))
-                                        .frame(height: 8)
-                                        .background(Color.white.opacity(0.1))
-                                        .cornerRadius(4)
-                                }
-                                .padding(.horizontal)
-                            }
-                        }
-
-                        // Suggestions
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Suggestions")
-                                .foregroundColor(.white)
-                                .font(.headline)
-                                .padding(.horizontal)
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                Label("Add breakfast for a better start", systemImage: "sunrise.fill")
-                                    .foregroundColor(.white.opacity(0.8))
-
-                                Label("Low protein so far", systemImage: "bolt.fill")
-                                    .foregroundColor(.white.opacity(0.8))
-                            }
-                            .padding()
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(12)
-                            .padding(.horizontal)
-                        }
-
-                        Spacer(minLength: 100)
                     }
                 }
 
@@ -155,7 +85,8 @@ struct DashboardView: View {
             .preferredColorScheme(.dark)
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
+            .onAppear(perform: fetchMeals)
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MealSaved"))) { _ in
                 fetchMeals()
             }
         }
@@ -171,16 +102,18 @@ struct DashboardView: View {
         isLoading = true
 
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            isLoading = false
-            guard let data = data else { return }
+            guard let data = data,
+                  let fetchedMeals = try? JSONDecoder().decode([Meal].self, from: data) else {
+                DispatchQueue.main.async { isLoading = false }
+                return
+            }
 
-            if let fetchedMeals = try? JSONDecoder().decode([Meal].self, from: data) {
-                DispatchQueue.main.async {
-                    self.meals = fetchedMeals
-                    self.totalCalories = fetchedMeals.reduce(0) {
-                        $0 + (extractCalories(from: $1.nutrition_info) ?? 0)
-                    }
+            DispatchQueue.main.async {
+                self.meals = fetchedMeals
+                self.totalCalories = fetchedMeals.reduce(0) {
+                    $0 + (extractCalories(from: $1.nutrition_info) ?? 0)
                 }
+                self.isLoading = false
             }
         }.resume()
     }
@@ -202,6 +135,12 @@ struct DashboardView: View {
         }
         return nil
     }
+
+    func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter.string(from: date)
+    }
 }
 
 struct Meal: Codable, Identifiable {
@@ -210,8 +149,8 @@ struct Meal: Codable, Identifiable {
     let dish_prediction: String
     let image_description: String
     let nutrition_info: String
-    let image_thumb: String?        // for dashboard and history
-    let image_full: String?         // for full-resolution detail view
+    let image_thumb: String?
+    let image_full: String?
     let hidden_ingredients: String?
+    let saved_at: String?
 }
-
