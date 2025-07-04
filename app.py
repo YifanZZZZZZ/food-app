@@ -13,20 +13,15 @@ from PIL import Image
 # Load environment variables
 load_dotenv()
 
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
-# MongoDB connection
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client[os.getenv("MONGO_DB", "food-app-swift")]
 users_collection = db["users"]
 profiles_collection = db["profiles"]
 meals_collection = db["meals"]
 
-# -------------------------------
-# 🔗 Health Check
-# -------------------------------
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok"}), 200
@@ -35,9 +30,6 @@ def ping():
 def home():
     return {"message": "Food Analyzer Backend is Running"}, 200
 
-# -------------------------------
-# 🔐 Register Endpoint
-# -------------------------------
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
@@ -53,9 +45,6 @@ def register():
     result = users_collection.insert_one(user)
     return jsonify({"user_id": str(result.inserted_id), "name": data["name"]}), 200
 
-# -------------------------------
-# 🔐 Login Endpoint
-# -------------------------------
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
@@ -69,9 +58,6 @@ def login():
 
     return jsonify({"user_id": str(user["_id"]), "name": user["name"]}), 200
 
-# -------------------------------
-# 👤 Save Profile
-# -------------------------------
 @app.route("/save-profile", methods=["POST"])
 def save_profile():
     try:
@@ -92,9 +78,6 @@ def save_profile():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -------------------------------
-# 👤 Get Profile
-# -------------------------------
 @app.route("/get-profile", methods=["GET"])
 def get_profile():
     try:
@@ -111,9 +94,6 @@ def get_profile():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -------------------------------
-# 📷 Analyze Image
-# -------------------------------
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -123,15 +103,12 @@ def analyze():
         image_file = request.files["image"]
         user_id = request.form.get("user_id", "guest")
 
-        # Create unique image filename
         filename = f"image_{int(time.time())}.png"
         image_path = os.path.join("/tmp", filename)
-
-        # Save image to disk
         image_file.save(image_path)
+
         print(f"📸 Saved image to: {image_path}")
 
-        # Run full Gemini analysis
         result = full_image_analysis(image_path, user_id)
         result["user_id"] = user_id
         print(f"✅ Gemini analysis completed for {filename}")
@@ -142,14 +119,10 @@ def analyze():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# -------------------------------
-# 📦 Helper: Compress base64 image
-# -------------------------------
 def compress_base64_image(base64_str, quality=5):
     try:
         image_data = base64.b64decode(base64_str)
         image = Image.open(BytesIO(image_data)).convert("RGB")
-
         buffer = BytesIO()
         image.save(buffer, format="JPEG", quality=quality)
         compressed_data = buffer.getvalue()
@@ -158,9 +131,6 @@ def compress_base64_image(base64_str, quality=5):
         print("❌ Compression Error:", str(e))
         return None
 
-# -------------------------------
-# 🍽️ Save Meal
-# -------------------------------
 @app.route("/save-meal", methods=["POST"])
 def save_meal():
     try:
@@ -181,7 +151,8 @@ def save_meal():
             "nutrition_info": data["nutrition_info"],
             "hidden_ingredients": data.get("hidden_ingredients", ""),
             "image_full": image_full,
-            "image_thumb": image_thumb
+            "image_thumb": image_thumb,
+            "saved_at": data.get("saved_at", time.strftime("%Y-%m-%dT%H:%M:%S"))
         }
 
         meals_collection.insert_one(meal)
@@ -189,9 +160,6 @@ def save_meal():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -------------------------------
-# 🍽️ Get Meals
-# -------------------------------
 @app.route("/user-meals", methods=["GET"])
 def get_user_meals():
     try:
@@ -202,13 +170,14 @@ def get_user_meals():
         meals = list(meals_collection.find({"user_id": user_id}))
         for meal in meals:
             meal["_id"] = str(meal["_id"])
+
+        print(f"🔍 Looking up meals for user_id: {user_id}")
+        print(f"📦 Total meals found: {len(meals)}")
+
         return jsonify(meals), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -------------------------------
-# 🚀 Start App
-# -------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, threaded=True)

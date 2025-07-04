@@ -1,4 +1,5 @@
-// MARK: - MealHistoryView.swift
+// MealHistoryView.swift (CLEANED-UP VERSION)
+
 import SwiftUI
 
 struct MealHistoryView: View {
@@ -56,11 +57,11 @@ struct MealHistoryView: View {
     }
 
     // MARK: - Meal Card View
-    @ViewBuilder
     func mealCard(for meal: Meal) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let imgBase64 = meal.image_thumb,
-               let image = decodeBase64ToUIImage(base64String: imgBase64) {
+            if let base64 = meal.image_thumb,
+               let data = Data(base64Encoded: base64),
+               let image = UIImage(data: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -97,16 +98,16 @@ struct MealHistoryView: View {
 
     // MARK: - API Call
     func fetchMeals() {
-        guard !SessionManager.shared.userID.isEmpty,
-              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(SessionManager.shared.userID)") else {
-            print("⚠️ Invalid user ID or URL")
+        guard let userID = UserDefaults.standard.string(forKey: "user_id"),
+              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userID)") else {
+            print("❌ Invalid user_id")
             return
         }
 
         isLoading = true
 
         URLSession.shared.dataTask(with: url) { data, _, error in
-            defer { DispatchQueue.main.async { isLoading = false } }
+            DispatchQueue.main.async { self.isLoading = false }
 
             guard let data = data, error == nil,
                   let decoded = try? JSONDecoder().decode([Meal].self, from: data) else {
@@ -122,12 +123,6 @@ struct MealHistoryView: View {
     }
 
     // MARK: - Helpers
-    func decodeBase64ToUIImage(base64String: String) -> UIImage? {
-        guard let data = Data(base64Encoded: base64String),
-              let image = UIImage(data: data) else { return nil }
-        return image
-    }
-
     func extractCalories(from text: String) -> Int? {
         for line in text.split(separator: "\n") {
             let parts = line.split(separator: "|")

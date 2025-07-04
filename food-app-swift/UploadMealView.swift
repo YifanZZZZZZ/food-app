@@ -2,42 +2,6 @@
 import SwiftUI
 import PhotosUI
 
-// Additional Structs & Helpers (auto-inserted)
-
-struct GeminiResult: Codable {
-    let image_description: String
-    let dish_prediction: String
-    let hidden_ingredients: String?
-    let nutrition_info: String
-}
-
-func parseIngredientLines(from text: String) -> [String] {
-    text.split(separator: "\n").compactMap { line in
-        let parts = line.split(separator: "|")
-        guard parts.count == 4 else { return nil }
-        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-    }
-}
-
-func parseNutritionLines(from text: String) -> [String] {
-    text.split(separator: "\n").compactMap { line in
-        let parts = line.split(separator: "|")
-        guard parts.count == 4 else { return nil }
-        return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
-    }
-}
-
-func extractCalories(from text: String) -> Int? {
-    for line in text.split(separator: "\n") {
-        let parts = line.split(separator: "|")
-        if parts.count == 4, parts[0].lowercased().contains("calories") {
-            return Int(parts[1].trimmingCharacters(in: .whitespaces))
-        }
-    }
-    return nil
-}
-
-
 struct UploadMealView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
@@ -194,7 +158,6 @@ struct UploadMealView: View {
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 120
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -211,6 +174,7 @@ struct UploadMealView: View {
         body.append("Content-Disposition: form-data; name=\"user_id\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(userId)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
         request.httpBody = body
 
         let config = URLSessionConfiguration.default
@@ -220,18 +184,15 @@ struct UploadMealView: View {
 
         session.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async { self.isLoading = false }
-
-            guard let data = data, error == nil else { return }
-
-            if let result = try? JSONDecoder().decode(GeminiResult.self, from: data) {
-                DispatchQueue.main.async {
-                    self.detectedDish = result.dish_prediction
-                    self.visibleIngredientLines = parseIngredientLines(from: result.image_description)
-                    self.hiddenIngredientLines = parseIngredientLines(from: result.hidden_ingredients ?? "")
-                    self.nutritionLines = parseNutritionLines(from: result.nutrition_info)
-                    self.calories = extractCalories(from: result.nutrition_info)
-                    self.rawNutritionInfo = result.nutrition_info
-                }
+            guard let data = data, error == nil,
+                  let result = try? JSONDecoder().decode(GeminiResult.self, from: data) else { return }
+            DispatchQueue.main.async {
+                self.detectedDish = result.dish_prediction
+                self.visibleIngredientLines = parseIngredientLines(from: result.image_description)
+                self.hiddenIngredientLines = parseIngredientLines(from: result.hidden_ingredients ?? "")
+                self.nutritionLines = parseNutritionLines(from: result.nutrition_info)
+                self.calories = extractCalories(from: result.nutrition_info)
+                self.rawNutritionInfo = result.nutrition_info
             }
         }.resume()
     }
