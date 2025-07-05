@@ -9,6 +9,7 @@ import traceback
 import time
 from io import BytesIO
 from PIL import Image
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -33,10 +34,14 @@ def home():
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Empty request"}), 400
+        
     if users_collection.find_one({"email": data["email"]}):
         return jsonify({"error": "Email already registered"}), 409
 
-    hashed_pw = base64.b64encode(data["password"].encode()).decode()
+    # Use SHA256 for better security than base64
+    hashed_pw = hashlib.sha256(data["password"].encode()).hexdigest()
     user = {
         "name": data["name"],
         "email": data["email"],
@@ -48,12 +53,16 @@ def register():
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Empty request"}), 400
+        
     user = users_collection.find_one({"email": data["email"]})
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
 
-    stored_pw = base64.b64decode(user["password"]).decode()
-    if stored_pw != data["password"]:
+    # Check password with SHA256
+    input_pw_hash = hashlib.sha256(data["password"].encode()).hexdigest()
+    if user["password"] != input_pw_hash:
         return jsonify({"error": "Invalid email or password"}), 401
 
     return jsonify({"user_id": str(user["_id"]), "name": user["name"]}), 200
@@ -116,8 +125,8 @@ def analyze():
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(full_image_analysis, image_path, user_id)
             try:
-                # Give it 45 seconds to complete
-                result = future.result(timeout=45)
+                # Give it 120 seconds to complete
+                result = future.result(timeout=120)
             except concurrent.futures.TimeoutError:
                 print("⏱️ Analysis timeout - using fallback")
                 # Return a simplified result
@@ -160,6 +169,9 @@ def compress_base64_image(base64_str, quality=5):
 def save_meal():
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+            
         required = ["user_id", "dish_prediction", "image_description", "nutrition_info"]
         missing = [k for k in required if k not in data]
         if missing:
@@ -183,6 +195,7 @@ def save_meal():
         meals_collection.insert_one(meal)
         return jsonify({"message": "Meal saved successfully"}), 200
     except Exception as e:
+        print(f"❌ Error in save_meal: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/user-meals", methods=["GET"])
@@ -207,23 +220,38 @@ def get_user_meals():
                 meal["image_full"] = meal["image_thumb"]  # Use same image for both
                 del meal["image"]  # Remove the binary field
             
-            # Ensure all required fields exist
+            # Ensure all required fields exist with correct names
             meal.setdefault("dish_prediction", meal.get("dish", "Unknown Dish"))
             meal.setdefault("image_description", meal.get("visible_ingredients", ""))
             meal.setdefault("hidden_ingredients", "")
             meal.setdefault("nutrition_info", "")
-            meal.setdefault("saved_at", meal.get("timestamp", "").isoformat() if "timestamp" in meal else "")
             
-            # Remove fields that might cause issues
-            meal.pop("timestamp", None)
-            meal.pop("visible_ingredients", None)
-            meal.pop("image_filename", None)
-            meal.pop("dish", None)  # Remove duplicate field
+            # Handle timestamp/saved_at field
+            if "timestamp" in meal:
+                if hasattr(meal["timestamp"], 'isoformat'):
+                    meal["saved_at"] = meal["timestamp"].isoformat()
+                else:
+                    meal["saved_at"] = str(meal["timestamp"])
+            else:
+                meal.setdefault("saved_at", "")
+            
+            # Remove fields that iOS doesn't expect
+            fields_to_remove = ["timestamp", "visible_ingredients", "image_filename", "dish"]
+            for field in fields_to_remove:
+                meal.pop(field, None)
+            
+            # Ensure image fields exist
+            meal.setdefault("image_full", "")
+            meal.setdefault("image_thumb", "")
             
             processed_meals.append(meal)
 
         print(f"🔍 Looking up meals for user_id: {user_id}")
         print(f"📦 Total meals found: {len(processed_meals)}")
+        
+        # Log first meal structure for debugging
+        if processed_meals:
+            print(f"📝 First meal keys: {list(processed_meals[0].keys())}")
 
         return jsonify(processed_meals), 200
     except Exception as e:
