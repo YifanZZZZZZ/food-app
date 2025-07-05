@@ -13,6 +13,7 @@ struct UploadMealView: View {
     @State private var calories: Int?
     @State private var showToast = false
     @State private var errorMessage = ""
+    @State private var retryCount = 0
 
     @Environment(\.dismiss) var dismiss
 
@@ -40,6 +41,8 @@ struct UploadMealView: View {
                             if let data = try? await newItem?.loadTransferable(type: Data.self),
                                let uiImage = UIImage(data: data) {
                                 self.selectedImage = uiImage
+                                self.errorMessage = ""
+                                self.retryCount = 0
                                 pingServerBeforeAnalyze {
                                     analyzeImage()
                                 }
@@ -62,14 +65,45 @@ struct UploadMealView: View {
                                     .scaleEffect(1.5)
                                 Text("Analyzing your meal...")
                                     .foregroundColor(.white)
-                                Text("This may take up to 2 minutes")
+                                Text("This may take up to 1 minute")
                                     .font(.caption)
                                     .foregroundColor(.white.opacity(0.7))
+                                if retryCount > 0 {
+                                    Text("Retry attempt \(retryCount)")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange.opacity(0.7))
+                                }
                             }
                         } else if !errorMessage.isEmpty {
-                            Text("⚠️ \(errorMessage)")
-                                .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
+                            VStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.orange)
+                                
+                                Text("Analysis Failed")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                
+                                Text(errorMessage)
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.center)
+                                    .font(.subheadline)
+                                
+                                Button(action: {
+                                    errorMessage = ""
+                                    analyzeImage()
+                                }) {
+                                    Label("Try Again", systemImage: "arrow.clockwise")
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 10)
+                                        .background(Color.orange)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(20)
+                                }
+                            }
+                            .padding()
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(12)
                         } else if let dish = detectedDish {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 12) {
@@ -107,14 +141,23 @@ struct UploadMealView: View {
                                     if let cal = calories {
                                         Text("🔥 Estimated Calories: \(cal) kcal")
                                             .foregroundColor(.yellow)
+                                            .font(.headline)
+                                            .padding(.top, 8)
                                     }
 
                                     HStack {
                                         Spacer()
-                                        Button("Save to Diary") {
-                                            saveMealToBackend()
+                                        Button(action: saveMealToBackend) {
+                                            HStack {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                Text("Save to Diary")
+                                            }
+                                            .padding(.horizontal, 24)
+                                            .padding(.vertical, 12)
+                                            .background(Color.green)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(25)
                                         }
-                                        .foregroundColor(.green)
                                     }
                                     .padding(.top, 10)
                                 }
@@ -131,7 +174,7 @@ struct UploadMealView: View {
 
                 VStack {
                     if showToast {
-                        Text("Meal saved!")
+                        Text("✅ Meal saved successfully!")
                             .foregroundColor(.white)
                             .padding(.horizontal, 24)
                             .padding(.vertical, 12)
@@ -150,14 +193,14 @@ struct UploadMealView: View {
     func pingServerBeforeAnalyze(completion: @escaping () -> Void) {
         let url = URL(string: "https://food-app-swift.onrender.com/ping")!
         var request = URLRequest(url: url)
-        request.timeoutInterval = 30
+        request.timeoutInterval = 10
 
         URLSession.shared.dataTask(with: request) { _, _, _ in
             DispatchQueue.main.async { completion() }
         }.resume()
     }
 
-    func resizeImage(_ image: UIImage, maxDimension: CGFloat = 1024) -> UIImage? {
+    func resizeImage(_ image: UIImage, maxDimension: CGFloat = 800) -> UIImage? {
         let size = image.size
         
         var newSize: CGSize
@@ -182,36 +225,68 @@ struct UploadMealView: View {
         
         return resizedImage
     }
+    
+    func compressImage(_ image: UIImage, maxSizeKB: Int = 500) -> Data? {
+        var compression: CGFloat = 0.7
+        var imageData = image.jpegData(compressionQuality: compression)
+        
+        while let data = imageData,
+              data.count > maxSizeKB * 1024 && compression > 0.1 {
+            compression -= 0.1
+            imageData = image.jpegData(compressionQuality: compression)
+        }
+        
+        return imageData
+    }
 
     func analyzeImage() {
         guard let image = selectedImage else { return }
         isLoading = true
         errorMessage = ""
-
-        // Resize image if too large
-        let resizedImage = resizeImage(image, maxDimension: 1024) ?? image
         
-        guard let imageData = resizedImage.jpegData(compressionQuality: 0.6) else {
+        // Show immediate feedback
+        detectedDish = nil
+        visibleIngredientLines = []
+        hiddenIngredientLines = []
+        nutritionLines = []
+        calories = nil
+        
+        // Resize image more aggressively
+        let resizedImage = resizeImage(image, maxDimension: 800) ?? image
+        
+        // Compress image
+        guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
             isLoading = false
-            errorMessage = "Failed to process image."
+            errorMessage = "Failed to process image. Please try a different photo."
             return
         }
+        
+        // Check image size
+        let imageSizeMB = Double(imageData.count) / (1024.0 * 1024.0)
+        print("📷 Image size: \(imageSizeMB)MB")
+        
+        analyzeWithRetry(imageData: imageData, retryCount: 0)
+    }
 
+    private func analyzeWithRetry(imageData: Data, retryCount: Int) {
+        self.retryCount = retryCount
+        let maxRetries = 2
+        
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 180  // 3 minutes timeout
-
+        request.timeoutInterval = 90  // 90 seconds timeout
+        
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
+        
         let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
         if userId.isEmpty {
             errorMessage = "Login session missing. Please log in again."
             isLoading = false
             return
         }
-
+        
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"image\"; filename=\"upload.jpg\"\r\n".data(using: .utf8)!)
@@ -222,42 +297,55 @@ struct UploadMealView: View {
         body.append("Content-Disposition: form-data; name=\"user_id\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(userId)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
+        
         request.httpBody = body
-
-        // Use a custom session with much longer timeout
+        
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 180  // 3 minutes
-        config.timeoutIntervalForResource = 300  // 5 minutes
+        config.timeoutIntervalForRequest = 90
+        config.timeoutIntervalForResource = 120
         config.waitsForConnectivity = true
         let session = URLSession(configuration: config)
-
+        
         session.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async { self.isLoading = false }
-
-            if let err = error as? URLError {
+            if let error = error as? URLError {
+                if error.code == .timedOut && retryCount < maxRetries {
+                    // Retry with exponential backoff
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(retryCount + 1) * 2) {
+                        self.analyzeWithRetry(imageData: imageData, retryCount: retryCount + 1)
+                    }
+                    return
+                }
+                
                 DispatchQueue.main.async {
-                    switch err.code {
+                    self.isLoading = false
+                    switch error.code {
                     case .timedOut:
-                        self.errorMessage = "The analysis is taking longer than expected. Please try again with a clearer food image."
+                        self.errorMessage = "Analysis timed out. Try a clearer image or check your connection."
                     case .notConnectedToInternet:
-                        self.errorMessage = "No internet connection. Please check your connection and try again."
+                        self.errorMessage = "No internet connection."
                     case .networkConnectionLost:
-                        self.errorMessage = "Connection lost. Please ensure you have a stable internet connection."
+                        self.errorMessage = "Connection lost. Please check your network."
                     default:
                         self.errorMessage = "Network error. Please try again."
                     }
                 }
                 return
             }
-
+            
+            DispatchQueue.main.async { self.isLoading = false }
+            
             guard let data = data else {
                 DispatchQueue.main.async {
-                    self.errorMessage = "No response from server. Please try again."
+                    self.errorMessage = "No response from server."
                 }
                 return
             }
-
+            
+            // Log response for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📋 Response: \(responseString.prefix(200))...")
+            }
+            
             // Try to decode error response first
             if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
                let errorMsg = errorResponse["error"] {
@@ -266,21 +354,22 @@ struct UploadMealView: View {
                 }
                 return
             }
-
-            guard let result = try? JSONDecoder().decode(GeminiResult.self, from: data) else {
+            
+            // Try to decode success response
+            if let result = try? JSONDecoder().decode(GeminiResult.self, from: data) {
+                DispatchQueue.main.async {
+                    self.detectedDish = result.dish_prediction
+                    self.visibleIngredientLines = self.parseIngredientLines(from: result.image_description)
+                    self.hiddenIngredientLines = self.parseIngredientLines(from: result.hidden_ingredients ?? "")
+                    self.nutritionLines = self.parseNutritionLines(from: result.nutrition_info)
+                    self.calories = self.extractCalories(from: result.nutrition_info)
+                    self.rawNutritionInfo = result.nutrition_info
+                    print("✅ Analysis successful: \(result.dish_prediction)")
+                }
+            } else {
                 DispatchQueue.main.async {
                     self.errorMessage = "Failed to process server response. Please try again."
                 }
-                return
-            }
-
-            DispatchQueue.main.async {
-                self.detectedDish = result.dish_prediction
-                self.visibleIngredientLines = parseIngredientLines(from: result.image_description)
-                self.hiddenIngredientLines = parseIngredientLines(from: result.hidden_ingredients ?? "")
-                self.nutritionLines = parseNutritionLines(from: result.nutrition_info)
-                self.calories = extractCalories(from: result.nutrition_info)
-                self.rawNutritionInfo = result.nutrition_info
             }
         }.resume()
     }
@@ -290,8 +379,12 @@ struct UploadMealView: View {
         let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
         if userId.isEmpty { return }
 
-        let fullImageBase64 = selectedImage?.jpegData(compressionQuality: 0.9)?.base64EncodedString() ?? ""
-        let thumbnailBase64 = selectedImage?.jpegData(compressionQuality: 0.1)?.base64EncodedString() ?? ""
+        // Use compressed images for storage
+        let fullImageData = compressImage(selectedImage!, maxSizeKB: 1000)
+        let thumbnailData = compressImage(selectedImage!, maxSizeKB: 100)
+        
+        let fullImageBase64 = fullImageData?.base64EncodedString() ?? ""
+        let thumbnailBase64 = thumbnailData?.base64EncodedString() ?? ""
 
         let payload: [String: Any] = [
             "user_id": userId,
@@ -317,7 +410,7 @@ struct UploadMealView: View {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
                     showToast = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         dismiss()
                     }
                 }
@@ -329,15 +422,18 @@ struct UploadMealView: View {
         text.split(separator: "\n").compactMap { line in
             let parts = line.split(separator: "|")
             guard parts.count == 4 else { return nil }
-            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces))"
         }
     }
 
     func parseNutritionLines(from text: String) -> [String] {
         text.split(separator: "\n").compactMap { line in
             let parts = line.split(separator: "|")
-            guard parts.count == 4 else { return nil }
-            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+            guard parts.count >= 2 else { return nil }
+            let nutrient = parts[0].trimmingCharacters(in: .whitespaces)
+            let value = parts[1].trimmingCharacters(in: .whitespaces)
+            let unit = parts.count > 2 ? parts[2].trimmingCharacters(in: .whitespaces) : ""
+            return "\(nutrient) — \(value) \(unit)"
         }
     }
 

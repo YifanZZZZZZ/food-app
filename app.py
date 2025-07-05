@@ -9,7 +9,8 @@ import traceback
 import time
 from io import BytesIO
 from PIL import Image
-import hashlib
+from datetime import datetime
+from auth import auth_bp  # Import the auth blueprint
 
 # Load environment variables
 load_dotenv()
@@ -17,11 +18,22 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
-client = MongoClient(os.getenv("MONGO_URI"))
+# Register the auth blueprint
+app.register_blueprint(auth_bp)
+
+# Configure MongoDB with connection pooling
+client = MongoClient(
+    os.getenv("MONGO_URI"),
+    maxPoolSize=50,
+    minPoolSize=10,
+    maxIdleTimeMS=30000,
+    serverSelectionTimeoutMS=5000
+)
 db = client[os.getenv("MONGO_DB", "food-app-swift")]
-users_collection = db["users"]
-profiles_collection = db["profiles"]
+
+# Create indexes for better performance
 meals_collection = db["meals"]
+meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 
 @app.route("/ping", methods=["GET"])
 def ping():
@@ -31,77 +43,32 @@ def ping():
 def home():
     return {"message": "Food Analyzer Backend is Running"}, 200
 
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Empty request"}), 400
-        
-    if users_collection.find_one({"email": data["email"]}):
-        return jsonify({"error": "Email already registered"}), 409
-
-    # Use SHA256 for better security than base64
-    hashed_pw = hashlib.sha256(data["password"].encode()).hexdigest()
-    user = {
-        "name": data["name"],
-        "email": data["email"],
-        "password": hashed_pw
-    }
-    result = users_collection.insert_one(user)
-    return jsonify({"user_id": str(result.inserted_id), "name": data["name"]}), 200
-
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Empty request"}), 400
-        
-    user = users_collection.find_one({"email": data["email"]})
-    if not user:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    # Check password with SHA256
-    input_pw_hash = hashlib.sha256(data["password"].encode()).hexdigest()
-    if user["password"] != input_pw_hash:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    return jsonify({"user_id": str(user["_id"]), "name": user["name"]}), 200
-
-@app.route("/save-profile", methods=["POST"])
-def save_profile():
+@app.route("/health", methods=["GET"])
+def health():
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Empty or invalid JSON"}), 400
-
-        user_id = data.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id"}), 400
-
-        profiles_collection.update_one(
-            {"user_id": user_id},
-            {"$set": {k: v for k, v in data.items() if k != "user_id"}},
-            upsert=True
-        )
-        return jsonify({"message": "Profile saved"}), 200
+        # Check MongoDB connection
+        client.admin.command('ping')
+        
+        # Check Gemini API key
+        gemini_ok = bool(os.getenv("GEMINI_API_KEY"))
+        
+        return jsonify({
+            "status": "healthy",
+            "mongodb": "connected",
+            "gemini": "configured" if gemini_ok else "missing API key",
+            "timestamp": datetime.now().isoformat()
+        }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 503
 
-@app.route("/get-profile", methods=["GET"])
-def get_profile():
-    try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-
-        profile = profiles_collection.find_one({"user_id": user_id})
-        if not profile:
-            return jsonify({"error": "Profile not found"}), 404
-
-        profile["_id"] = str(profile["_id"])
-        return jsonify(profile), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Remove these routes as they're handled by auth.py:
+# - /register
+# - /login  
+# - /save-profile
+# - /get-profile (change iOS to use /profile)
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -112,29 +79,37 @@ def analyze():
         image_file = request.files["image"]
         user_id = request.form.get("user_id", "guest")
 
+        # Validate file size (limit to 10MB)
+        image_file.seek(0, 2)  # Seek to end
+        file_size = image_file.tell()
+        image_file.seek(0)  # Reset to beginning
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
+            return jsonify({"error": "Image too large. Please use an image under 10MB"}), 413
+
         filename = f"image_{int(time.time())}.png"
         image_path = os.path.join("/tmp", filename)
         image_file.save(image_path)
 
-        print(f"📸 Saved image to: {image_path}")
+        print(f"📸 Saved image to: {image_path} (size: {file_size / 1024 / 1024:.2f}MB)")
 
-        # Add timeout protection
+        # Add proper timeout handling with ThreadPoolExecutor
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
         import concurrent.futures
         
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(full_image_analysis, image_path, user_id)
             try:
-                # Give it 120 seconds to complete
-                result = future.result(timeout=120)
+                # Give it 60 seconds to complete
+                result = future.result(timeout=60)
             except concurrent.futures.TimeoutError:
                 print("⏱️ Analysis timeout - using fallback")
                 # Return a simplified result
                 result = {
-                    "dish_prediction": "Food Item",
-                    "image_description": "Analysis is taking longer than expected. Please try again.",
-                    "hidden_ingredients": "",
-                    "nutrition_info": "Calories | 0 | kcal | Estimation pending"
+                    "dish_prediction": "Food Item (Analysis Timeout)",
+                    "image_description": "Food | 1 | serving | Analysis timeout",
+                    "hidden_ingredients": "Unable to analyze",
+                    "nutrition_info": "Calories | 200 | kcal | Estimated average\nProtein | 10 | g | Estimated\nFat | 8 | g | Estimated\nCarbohydrates | 25 | g | Estimated"
                 }
         
         result["user_id"] = user_id
@@ -151,7 +126,7 @@ def analyze():
     except Exception as e:
         print("❌ analyze Exception:", str(e))
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Analysis failed. Please try again."}), 500
 
 def compress_base64_image(base64_str, quality=5):
     try:
