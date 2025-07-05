@@ -69,12 +69,13 @@ struct RegisterView: View {
                         }
                     }
                     .font(.footnote)
-
-                    NavigationLink("", destination: ProfileSetupView(), isActive: $navigateToProfile).hidden()
                 }
                 .padding(.top, 40)
             }
             .preferredColorScheme(.dark)
+            .navigationDestination(isPresented: $navigateToProfile) {
+                ProfileSetupView()
+            }
         }
     }
 
@@ -90,7 +91,7 @@ struct RegisterView: View {
                 .cornerRadius(14)
                 .foregroundColor(.white)
                 .frame(width: 280)
-                .onChange(of: text.wrappedValue, initial: false) { _, _ in validate() }
+                .onChange(of: text.wrappedValue) { _, _ in validate() }
 
             if !error.wrappedValue.isEmpty {
                 Text(error.wrappedValue)
@@ -119,7 +120,7 @@ struct RegisterView: View {
             .cornerRadius(14)
             .foregroundColor(.white)
             .frame(width: 280)
-            .onChange(of: text.wrappedValue, initial: false) { _, _ in validate() }
+            .onChange(of: text.wrappedValue) { _, _ in validate() }
 
             if !error.wrappedValue.isEmpty {
                 Text(error.wrappedValue)

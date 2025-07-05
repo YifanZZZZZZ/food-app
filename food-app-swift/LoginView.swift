@@ -162,9 +162,6 @@ struct LoginView: View {
                             }
                         }
                         .font(.footnote)
-
-                        NavigationLink("", destination: ProfileSetupView(), isActive: $navigate)
-                            .hidden()
                     }
 
                     Spacer()
@@ -173,6 +170,9 @@ struct LoginView: View {
             .preferredColorScheme(.dark)
             .onTapGesture {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+            .navigationDestination(isPresented: $navigate) {
+                ProfileSetupView()
             }
         }
     }

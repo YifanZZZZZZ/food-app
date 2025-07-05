@@ -88,7 +88,7 @@ struct DashboardView: View {
                                 }
                                 .padding(.horizontal)
                             }
-                            .onChange(of: scrollToLatest) { newValue in
+                            .onChange(of: scrollToLatest) { _, newValue in
                                 if newValue && !meals.isEmpty {
                                     withAnimation {
                                         proxy.scrollTo(meals.count - 1, anchor: .center)

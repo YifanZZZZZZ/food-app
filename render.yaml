@@ -2,10 +2,14 @@ services:
   - type: web
     name: food-analyzer
     env: python
-    startCommand: "python app.py"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app --workers 2 --threads 4 --timeout 120"
     envVars:
       - key: GEMINI_API_KEY
         sync: false
-      - key: MONGODB_URI
+      - key: MONGO_URI
         sync: false
+      - key: MONGO_DB
+        value: food-app-swift
     plan: free
+    healthCheckPath: /health
