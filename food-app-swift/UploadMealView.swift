@@ -1,4 +1,3 @@
-// PATCHED: MealDetailView.swift, MealHistoryView.swift, and UploadMealView.swift with fallback handling and Gemini error patches
 import SwiftUI
 import PhotosUI
 
@@ -155,7 +154,7 @@ struct UploadMealView: View {
         isLoading = true
         errorMessage = ""
 
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+        guard let imageData = image.jpegData(compressionQuality: 0.5) else {  // Reduced quality
             isLoading = false
             errorMessage = "Failed to compress image."
             return
@@ -164,6 +163,7 @@ struct UploadMealView: View {
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 60  // Increase timeout to 60 seconds
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -188,21 +188,40 @@ struct UploadMealView: View {
 
         request.httpBody = body
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        // Use a custom session with longer timeout
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 90
+        let session = URLSession(configuration: config)
+
+        session.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async { self.isLoading = false }
 
-            if let err = error as? URLError, err.code == .networkConnectionLost {
-                self.errorMessage = "⚠️ Network connection lost. Please try again."
+            if let err = error as? URLError {
+                DispatchQueue.main.async {
+                    switch err.code {
+                    case .networkConnectionLost:
+                        self.errorMessage = "⚠️ Analysis is taking too long. Please try with a smaller image."
+                    case .timedOut:
+                        self.errorMessage = "⏱️ Request timed out. The server might be warming up. Please try again."
+                    default:
+                        self.errorMessage = "❌ Network error: \(err.localizedDescription)"
+                    }
+                }
                 return
             }
 
             guard let data = data else {
-                self.errorMessage = "❌ No response from server."
+                DispatchQueue.main.async {
+                    self.errorMessage = "❌ No response from server."
+                }
                 return
             }
 
             guard let result = try? JSONDecoder().decode(GeminiResult.self, from: data) else {
-                self.errorMessage = "❌ Failed to decode Gemini response."
+                DispatchQueue.main.async {
+                    self.errorMessage = "❌ Failed to decode Gemini response."
+                }
                 return
             }
 
