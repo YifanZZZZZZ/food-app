@@ -1,4 +1,3 @@
-// MARK: - DashboardView.swift
 import SwiftUI
 
 struct DashboardView: View {
@@ -6,6 +5,8 @@ struct DashboardView: View {
     @State private var totalCalories: Int = 0
     @State private var isLoading = false
     @State private var scrollToLatest = false
+    @State private var showMealHistory = false
+    @State private var showUploadMeal = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,28 @@ struct DashboardView: View {
 
                     Divider().background(Color.white.opacity(0.3))
 
+                    HStack {
+                        Text("Past Meals")
+                            .font(.headline)
+                            .foregroundColor(.white.opacity(0.9))
+
+                        Spacer()
+
+                        Button(action: {
+                            showMealHistory = true
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "list.bullet")
+                                Text("View All")
+                            }
+                            .font(.caption)
+                            .padding(6)
+                            .background(Color.white.opacity(0.1))
+                            .foregroundColor(.orange)
+                            .cornerRadius(8)
+                        }
+                    }
+
                     if isLoading {
                         ProgressView("Loading meals...")
                             .progressViewStyle(CircularProgressViewStyle(tint: .orange))
@@ -40,7 +63,7 @@ struct DashboardView: View {
                         ScrollViewReader { proxy in
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 16) {
-                                    ForEach(meals.indices, id: \._self) { index in
+                                    ForEach(meals.indices, id: \.self) { index in
                                         mealCard(for: meals[index])
                                             .id(index)
                                     }
@@ -61,12 +84,38 @@ struct DashboardView: View {
                     Spacer()
                 }
                 .padding()
+
+                // ✅ Floating Upload Button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            showUploadMeal = true
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.title)
+                                .foregroundColor(.white)
+                                .padding()
+                                .background(Color.orange)
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
+                        }
+                        .padding()
+                    }
+                }
             }
             .preferredColorScheme(.dark)
             .onAppear(perform: fetchMeals)
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MealSaved"))) { _ in
                 fetchMeals()
                 scrollToLatest = true
+            }
+            .sheet(isPresented: $showMealHistory) {
+                MealHistoryView()
+            }
+            .sheet(isPresented: $showUploadMeal) {
+                UploadMealView()
             }
         }
     }

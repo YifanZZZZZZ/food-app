@@ -1,4 +1,4 @@
-// MARK: - UploadMealView.swift
+// PATCHED: MealDetailView.swift, MealHistoryView.swift, and UploadMealView.swift with fallback handling and Gemini error patches
 import SwiftUI
 import PhotosUI
 
@@ -13,6 +13,7 @@ struct UploadMealView: View {
     @State private var rawNutritionInfo: String = ""
     @State private var calories: Int?
     @State private var showToast = false
+    @State private var errorMessage = ""
 
     @Environment(\.dismiss) var dismiss
 
@@ -58,6 +59,10 @@ struct UploadMealView: View {
                         if isLoading {
                             ProgressView("Analyzing...")
                                 .foregroundColor(.white)
+                        } else if !errorMessage.isEmpty {
+                            Text("⚠️ \(errorMessage)")
+                                .foregroundColor(.red)
+                                .multilineTextAlignment(.center)
                         } else if let dish = detectedDish {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 12) {
@@ -117,7 +122,6 @@ struct UploadMealView: View {
                 }
                 .padding()
 
-                // Toast Notification
                 VStack {
                     if showToast {
                         Text("Meal saved!")
@@ -149,9 +153,11 @@ struct UploadMealView: View {
     func analyzeImage() {
         guard let image = selectedImage else { return }
         isLoading = true
+        errorMessage = ""
 
         guard let imageData = image.jpegData(compressionQuality: 0.8) else {
             isLoading = false
+            errorMessage = "Failed to compress image."
             return
         }
 
@@ -162,7 +168,12 @@ struct UploadMealView: View {
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        let userId = UserDefaults.standard.string(forKey: "user_id") ?? "guest"
+        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
+        if userId.isEmpty {
+            errorMessage = "Login session missing. Please log in again."
+            isLoading = false
+            return
+        }
 
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -177,15 +188,24 @@ struct UploadMealView: View {
 
         request.httpBody = body
 
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 90
-        config.timeoutIntervalForResource = 120
-        let session = URLSession(configuration: config)
-
-        session.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async { self.isLoading = false }
-            guard let data = data, error == nil,
-                  let result = try? JSONDecoder().decode(GeminiResult.self, from: data) else { return }
+
+            if let err = error as? URLError, err.code == .networkConnectionLost {
+                self.errorMessage = "⚠️ Network connection lost. Please try again."
+                return
+            }
+
+            guard let data = data else {
+                self.errorMessage = "❌ No response from server."
+                return
+            }
+
+            guard let result = try? JSONDecoder().decode(GeminiResult.self, from: data) else {
+                self.errorMessage = "❌ Failed to decode Gemini response."
+                return
+            }
+
             DispatchQueue.main.async {
                 self.detectedDish = result.dish_prediction
                 self.visibleIngredientLines = parseIngredientLines(from: result.image_description)
@@ -199,7 +219,8 @@ struct UploadMealView: View {
 
     func saveMealToBackend() {
         guard let dish = detectedDish else { return }
-        let userId = UserDefaults.standard.string(forKey: "user_id") ?? "guest"
+        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
+        if userId.isEmpty { return }
 
         let fullImageBase64 = selectedImage?.jpegData(compressionQuality: 0.9)?.base64EncodedString() ?? ""
         let thumbnailBase64 = selectedImage?.jpegData(compressionQuality: 0.1)?.base64EncodedString() ?? ""
@@ -234,5 +255,31 @@ struct UploadMealView: View {
                 }
             }
         }.resume()
+    }
+
+    func parseIngredientLines(from text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|")
+            guard parts.count == 4 else { return nil }
+            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+        }
+    }
+
+    func parseNutritionLines(from text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|")
+            guard parts.count == 4 else { return nil }
+            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces)) (\(parts[3].trimmingCharacters(in: .whitespaces)))"
+        }
+    }
+
+    func extractCalories(from text: String) -> Int? {
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "|")
+            if parts.count >= 2, parts[0].lowercased().contains("calories") {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces))
+            }
+        }
+        return nil
     }
 }

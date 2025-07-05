@@ -168,14 +168,43 @@ def get_user_meals():
             return jsonify({"error": "Missing user_id parameter"}), 400
 
         meals = list(meals_collection.find({"user_id": user_id}))
+        
+        # Process each meal to ensure compatibility
+        processed_meals = []
         for meal in meals:
+            # Convert ObjectId to string
             meal["_id"] = str(meal["_id"])
+            
+            # Handle different image storage formats
+            if "image" in meal and isinstance(meal["image"], bytes):
+                # If image is stored as Binary, convert to base64
+                meal["image_thumb"] = base64.b64encode(meal["image"]).decode('utf-8')
+                meal["image_full"] = meal["image_thumb"]  # Use same image for both
+                del meal["image"]  # Remove the binary field
+            
+            # Ensure all required fields exist
+            meal.setdefault("dish_prediction", meal.get("dish", "Unknown Dish"))
+            meal.setdefault("image_description", meal.get("visible_ingredients", ""))
+            meal.setdefault("hidden_ingredients", "")
+            meal.setdefault("nutrition_info", "")
+            meal.setdefault("saved_at", meal.get("timestamp", "").isoformat() if "timestamp" in meal else "")
+            
+            # Remove fields that might cause issues
+            meal.pop("timestamp", None)
+            meal.pop("visible_ingredients", None)
+            meal.pop("image_filename", None)
+            meal.pop("dish", None)  # Remove duplicate field
+            
+            processed_meals.append(meal)
 
         print(f"🔍 Looking up meals for user_id: {user_id}")
-        print(f"📦 Total meals found: {len(meals)}")
+        print(f"📦 Total meals found: {len(processed_meals)}")
 
-        return jsonify(meals), 200
+        return jsonify(processed_meals), 200
     except Exception as e:
+        print(f"❌ Error in get_user_meals: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
