@@ -9,14 +9,17 @@ import traceback
 import time
 from io import BytesIO
 from PIL import Image
-import hashlib
 from datetime import datetime
+from auth import auth_bp  # Import the auth blueprint
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+
+# Register the auth blueprint
+app.register_blueprint(auth_bp)
 
 # Configure MongoDB with connection pooling
 client = MongoClient(
@@ -29,12 +32,6 @@ client = MongoClient(
 db = client[os.getenv("MONGO_DB", "food-app-swift")]
 
 # Create indexes for better performance
-users_collection = db["users"]
-users_collection.create_index("email", unique=True)
-
-profiles_collection = db["profiles"]
-profiles_collection.create_index("user_id")
-
 meals_collection = db["meals"]
 meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 
@@ -67,77 +64,11 @@ def health():
             "error": str(e)
         }), 503
 
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Empty request"}), 400
-        
-    if users_collection.find_one({"email": data["email"]}):
-        return jsonify({"error": "Email already registered"}), 409
-
-    # Use SHA256 for better security than base64
-    hashed_pw = hashlib.sha256(data["password"].encode()).hexdigest()
-    user = {
-        "name": data["name"],
-        "email": data["email"],
-        "password": hashed_pw
-    }
-    result = users_collection.insert_one(user)
-    return jsonify({"user_id": str(result.inserted_id), "name": data["name"]}), 200
-
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Empty request"}), 400
-        
-    user = users_collection.find_one({"email": data["email"]})
-    if not user:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    # Check password with SHA256
-    input_pw_hash = hashlib.sha256(data["password"].encode()).hexdigest()
-    if user["password"] != input_pw_hash:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    return jsonify({"user_id": str(user["_id"]), "name": user["name"]}), 200
-
-@app.route("/save-profile", methods=["POST"])
-def save_profile():
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Empty or invalid JSON"}), 400
-
-        user_id = data.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id"}), 400
-
-        profiles_collection.update_one(
-            {"user_id": user_id},
-            {"$set": {k: v for k, v in data.items() if k != "user_id"}},
-            upsert=True
-        )
-        return jsonify({"message": "Profile saved"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/get-profile", methods=["GET"])
-def get_profile():
-    try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-
-        profile = profiles_collection.find_one({"user_id": user_id})
-        if not profile:
-            return jsonify({"error": "Profile not found"}), 404
-
-        profile["_id"] = str(profile["_id"])
-        return jsonify(profile), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Remove these routes as they're handled by auth.py:
+# - /register
+# - /login  
+# - /save-profile
+# - /get-profile (change iOS to use /profile)
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
