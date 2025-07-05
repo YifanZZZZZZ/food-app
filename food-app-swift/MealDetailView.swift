@@ -1,3 +1,4 @@
+// PATCHED: MealDetailView.swift 
 import SwiftUI
 
 struct MealDetailView: View {
@@ -6,7 +7,6 @@ struct MealDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // ✅ Dynamic Image (if available)
                 if let base64 = meal.image_full, let uiImage = decodeBase64ToUIImage(base64) {
                     Image(uiImage: uiImage)
                         .resizable()
@@ -14,8 +14,7 @@ struct MealDetailView: View {
                         .frame(height: 220)
                         .cornerRadius(14)
                         .padding(.horizontal)
-                }
-                else {
+                } else {
                     Rectangle()
                         .fill(Color.orange.opacity(0.7))
                         .frame(height: 220)
@@ -24,7 +23,6 @@ struct MealDetailView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
-                    // ✅ Dish Title
                     Text(meal.dish_prediction)
                         .font(.title3)
                         .bold()
@@ -34,7 +32,6 @@ struct MealDetailView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .font(.caption)
 
-                    // ✅ Ingredients Section
                     VStack(alignment: .leading, spacing: 6) {
                         Text("🧾 Ingredients")
                             .foregroundColor(.orange)
@@ -45,7 +42,6 @@ struct MealDetailView: View {
                         }
                     }
 
-                    // ✅ Hidden Ingredients
                     if let hidden = meal.hidden_ingredients, !hidden.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("🫙 Hidden Ingredients")
@@ -58,36 +54,32 @@ struct MealDetailView: View {
                         }
                     }
 
-                    // ✅ Nutrition Info
                     VStack(alignment: .leading, spacing: 6) {
                         Text("🍎 Nutrition Info")
                             .foregroundColor(.green)
                             .fontWeight(.semibold)
 
-                        ForEach(meal.nutrition_info.split(separator: "\n"), id: \.self) { line in
+                        let lines = parseNutritionLinesFallback(meal.nutrition_info)
+
+                        ForEach(lines, id: \.self) { line in
                             Text("• \(line)").foregroundColor(.white.opacity(0.9))
                         }
                     }
 
-                    // 🔧 Action Buttons (stubbed for now)
                     HStack {
-                        Button("Edit") {
-                            // TODO: Add edit logic
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                        Button("Edit") {}
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
 
-                        Button("Delete") {
-                            // TODO: Add delete logic
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red.opacity(0.85))
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                        Button("Delete") {}
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red.opacity(0.85))
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
                     }
                 }
                 .padding(.horizontal)
@@ -100,10 +92,20 @@ struct MealDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // MARK: - Helper
     func decodeBase64ToUIImage(_ base64: String) -> UIImage? {
         guard let data = Data(base64Encoded: base64),
               let image = UIImage(data: data) else { return nil }
         return image
+    }
+
+    func parseNutritionLinesFallback(_ text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|")
+            if parts.count >= 2 {
+                return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces))"
+            } else {
+                return String(line)
+            }
+        }
     }
 }

@@ -8,6 +8,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from bson.binary import Binary
 from pymongo import MongoClient
+from io import BytesIO
+
 
 # ---------- Load Environment ----------
 load_dotenv()
@@ -130,18 +132,30 @@ def full_image_analysis(image_path, user_id):
     hidden = search_hidden_ingredients(dish_name, visible)
     nutrition = estimate_nutrition_from_ingredients(dish_name, visible)
 
+    # Convert image to base64 instead of Binary
     with open(image_path, "rb") as img_file:
-        img_binary = Binary(img_file.read())
+        img_data = img_file.read()
+        img_base64 = base64.b64encode(img_data).decode('utf-8')
+    
+    # Create thumbnail
+    from PIL import Image
+    from io import BytesIO
+    
+    img = Image.open(image_path)
+    img.thumbnail((200, 200))  # Resize for thumbnail
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG", quality=30)
+    thumb_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
     meal_doc = {
         "user_id": user_id,
-        "dish": dish_name,
-        "image": img_binary,
-        "image_filename": os.path.basename(image_path),
-        "timestamp": datetime.now(),
-        "visible_ingredients": visible,
+        "dish_prediction": dish_name,  # Use consistent field name
+        "image_full": img_base64,       # Store as base64
+        "image_thumb": thumb_base64,    # Store thumbnail
+        "image_description": gemini_description,
         "hidden_ingredients": hidden,
-        "nutrition_info": nutrition
+        "nutrition_info": nutrition,
+        "saved_at": datetime.now().isoformat()
     }
 
     meals_collection.insert_one(meal_doc)

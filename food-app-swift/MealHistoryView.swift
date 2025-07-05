@@ -1,5 +1,4 @@
-// MealHistoryView.swift (CLEANED-UP VERSION)
-
+// PATCHED: MealHistoryView.swift with lenient parsing fallback and nutrition display
 import SwiftUI
 
 struct MealHistoryView: View {
@@ -56,7 +55,6 @@ struct MealHistoryView: View {
         }
     }
 
-    // MARK: - Meal Card View
     func mealCard(for meal: Meal) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let base64 = meal.image_thumb,
@@ -86,9 +84,12 @@ struct MealHistoryView: View {
                     .foregroundColor(.white.opacity(0.6))
             }
 
-            Text(meal.image_description)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.7))
+            let lines = parseNutritionLinesFallback(meal.nutrition_info)
+            ForEach(lines, id: \.self) { line in
+                Text("• \(line)")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+            }
         }
         .padding()
         .background(Color.white.opacity(0.05))
@@ -96,7 +97,6 @@ struct MealHistoryView: View {
         .shadow(radius: 2)
     }
 
-    // MARK: - API Call
     func fetchMeals() {
         guard let userID = UserDefaults.standard.string(forKey: "user_id"),
               let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userID)") else {
@@ -122,15 +122,25 @@ struct MealHistoryView: View {
         }.resume()
     }
 
-    // MARK: - Helpers
     func extractCalories(from text: String) -> Int? {
         for line in text.split(separator: "\n") {
             let parts = line.split(separator: "|")
-            if parts.count == 4, parts[0].lowercased().contains("calories") {
+            if parts.count >= 2, parts[0].lowercased().contains("calories") {
                 return Int(parts[1].trimmingCharacters(in: .whitespaces))
             }
         }
         return nil
+    }
+
+    func parseNutritionLinesFallback(_ text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|")
+            if parts.count >= 2 {
+                return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces))"
+            } else {
+                return String(line)
+            }
+        }
     }
 
     func formattedDate(_ date: Date) -> String {
