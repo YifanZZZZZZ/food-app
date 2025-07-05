@@ -6,10 +6,8 @@ import os
 import re
 from datetime import datetime
 from dotenv import load_dotenv
-from bson.binary import Binary
 from pymongo import MongoClient
 from io import BytesIO
-
 
 # ---------- Load Environment ----------
 load_dotenv()
@@ -38,207 +36,152 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
-def analyze_image_with_gemini(image_path):
-    image_data = encode_image(image_path)
-    prompt = (
-        "Describe the food dish in this image.\n"
-        "Return the dish name on the first line.\n"
-        "Then list each visible ingredient on a new line in the format: Ingredient | Quantity Number | Unit | Reasoning.\n"
-        "Quantity Number must be a numeric value only.\n"
-        "Avoid vague ranges or approximations like 'a few' or 'some'.\n"
-        "Be concise and avoid unnecessary descriptions.\n"
-        "Skip any background or utensils."
-    )
+def analyze_image_with_gemini_combined(image_path):
+    """Single Gemini call for all analysis"""
+    combined_prompt = """
+    Analyze this food image and provide comprehensive information.
+    
+    First line: Just the dish name
+    
+    Then provide these sections:
+    
+    VISIBLE INGREDIENTS:
+    List each visible ingredient in format: Ingredient | Quantity | Unit | Reasoning
+    
+    HIDDEN INGREDIENTS:
+    List likely hidden ingredients (oils, spices, sauces) in format: Ingredient | Quantity | Unit | Reasoning
+    
+    NUTRITION INFO:
+    List nutrition per serving in format: Nutrient | Value | Unit | Reasoning
+    Must include: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium
+    
+    Rules:
+    - Quantity must be a number only (no ranges like 1-2)
+    - Be specific and realistic
+    - Skip background items or utensils
+    """
+    
     try:
+        image_data = encode_image(image_path)
         response = gemini_model.generate_content([
-            prompt,
+            combined_prompt,
             {"mime_type": "image/png", "data": image_data}
         ])
         return response.text
     except Exception as e:
-        return f"Gemini error: {str(e)}"
+        print(f"❌ Gemini error: {str(e)}")
+        return f"Food Item\n\nVISIBLE INGREDIENTS:\nFood | 1 | serving | Unable to analyze\n\nHIDDEN INGREDIENTS:\nSeasoning | 1 | pinch | Estimated\n\nNUTRITION INFO:\nCalories | 200 | kcal | Estimated"
 
-def extract_ingredients_only(description):
-    lines = description.splitlines()
-    ingredients = []
+def parse_combined_response(response_text):
+    """Parse the combined Gemini response into sections"""
+    lines = response_text.strip().split('\n')
+    
+    # First line is dish name
+    dish_name = lines[0].strip() if lines else "Unknown Dish"
+    
+    # Initialize sections
+    visible_ingredients = []
+    hidden_ingredients = []
+    nutrition_info = []
+    
+    current_section = None
+    
     for line in lines[1:]:
-        if '|' in line and len(line.split('|')) == 4:
-            ingredients.append(line.strip())
-    return "\n".join(ingredients)
-
-def search_hidden_ingredients(dish_name, visible_ingredients):
-    prompt = (
-        f"You are a recipe analyst.\n"
-        f"For the dish '{dish_name}', given the following visible ingredients:\n{visible_ingredients},\n"
-        "list only the likely hidden ingredients used in traditional or common recipes for this dish.\n"
-        "Format each hidden ingredient on a new line like this: Ingredient | Quantity Number | Unit | Reasoning.\n"
-        "Quantity Number must be a numeric value only.\n"
-        "Only include core items like oil, butter, sauces, or spices typically used. Avoid optional or garnish ingredients.\n"
-        "Do NOT use any vague descriptions. Be clear and formatted strictly."
-    )
-    try:
-        response = gemini_model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Hidden ingredients lookup error: {str(e)}"
-
-def estimate_nutrition_from_ingredients(dish_name, visible_ingredients):
-    prompt = (
-        f"You are a nutritionist.\n"
-        f"The user has provided the visible ingredients from a dish named '{dish_name}'.\n"
-        f"Ingredients:\n{visible_ingredients}\n\n"
-        "Your task is to output the nutritional breakdown per serving (based on image analysis).\n"
-        "Output each nutrient on a new line in this exact format:\n"
-        "Nutrient | Value | Unit | Reasoning\n"
-        "Value must be a numeric value only.\n"
-        "Include at least: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
-        "Avoid ranges like 100–200 or vague words.\n"
-        "Be strict with the format."
-    )
-    try:
-        response = gemini_model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Nutrition estimation error: {str(e)}"
+        line = line.strip()
+        
+        # Check for section headers
+        if 'VISIBLE INGREDIENTS' in line.upper():
+            current_section = 'visible'
+            continue
+        elif 'HIDDEN INGREDIENTS' in line.upper():
+            current_section = 'hidden'
+            continue
+        elif 'NUTRITION' in line.upper():
+            current_section = 'nutrition'
+            continue
+        
+        # Parse ingredient/nutrition lines
+        if '|' in line and current_section:
+            if current_section == 'visible':
+                visible_ingredients.append(line)
+            elif current_section == 'hidden':
+                hidden_ingredients.append(line)
+            elif current_section == 'nutrition':
+                nutrition_info.append(line)
+    
+    return {
+        'dish_name': dish_name,
+        'visible_ingredients': '\n'.join(visible_ingredients),
+        'hidden_ingredients': '\n'.join(hidden_ingredients),
+        'nutrition_info': '\n'.join(nutrition_info)
+    }
 
 def extract_dish_name(description):
-    match = re.search(r'(?i)(?:dish name[:\-]?)\s*(.*)', description)
-    if match:
-        return match.group(1).strip().capitalize()
-    first_line = description.strip().split('\n')[0]
-    return first_line.strip().capitalize()
-
-def parse_to_dict(text):
-    data_dict = {}
-    for line in text.splitlines():
-        parts = [p.strip() for p in line.split('|')]
-        if len(parts) == 4:
-            try:
-                numeric_value = float(parts[1]) if '.' in parts[1] else int(parts[1])
-                data_dict[parts[0]] = {
-                    "Quantity Number/Value": numeric_value,
-                    "Unit": parts[2],
-                    "Reasoning": parts[3]
-                }
-            except ValueError:
-                continue
-    return data_dict
+    """Extract dish name from first line"""
+    lines = description.strip().split('\n')
+    return lines[0].strip().capitalize() if lines else "Unknown Dish"
 
 # ---------- Main Analysis Function ----------
 def full_image_analysis(image_path, user_id):
     try:
-        # Get all analyses in one call instead of three
-        combined_prompt = """
-        Analyze this food image and provide:
+        # Get combined analysis from Gemini
+        print("🤖 Starting Gemini analysis...")
+        combined_response = analyze_image_with_gemini_combined(image_path)
         
-        1. DISH NAME: (one line)
+        # Parse the response
+        parsed = parse_combined_response(combined_response)
         
-        2. VISIBLE INGREDIENTS:
-        Format: Ingredient | Quantity | Unit | Reasoning
+        dish_name = parsed['dish_name']
+        visible = parsed['visible_ingredients']
+        hidden = parsed['hidden_ingredients']
+        nutrition = parsed['nutrition_info']
         
-        3. HIDDEN INGREDIENTS (oils, spices, sauces typically used):
-        Format: Ingredient | Quantity | Unit | Reasoning
-        
-        4. NUTRITION (per serving):
-        Format: Nutrient | Value | Unit | Reasoning
-        Include: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium
-        
-        Be specific with quantities. Use numbers only, no ranges.
-        """
-        
-        # Single API call instead of three
-        image_data = encode_image(image_path)
-        try:
-            response = gemini_model.generate_content([
-                combined_prompt,
-                {"mime_type": "image/png", "data": image_data}
-            ])
-            full_analysis = response.text
-        except Exception as e:
-            print(f"❌ Gemini error: {str(e)}")
-            # Fallback response
-            full_analysis = """
-            Unknown Dish
-            
-            VISIBLE INGREDIENTS:
-            Food item | 1 | serving | Unable to analyze
-            
-            HIDDEN INGREDIENTS:
-            Seasoning | 1 | pinch | Estimated
-            
-            NUTRITION:
-            Calories | 200 | kcal | Estimated average
-            Protein | 10 | g | Estimated average
-            Fat | 8 | g | Estimated average
-            Carbohydrates | 25 | g | Estimated average
-            """
-        
-        # Parse the combined response
-        sections = full_analysis.split('\n\n')
-        dish_name = sections[0].strip() if sections else "Unknown Dish"
-        
-        # Extract each section
-        visible = ""
-        hidden = ""
-        nutrition = ""
-        
-        current_section = ""
-        for line in full_analysis.split('\n'):
-            if 'VISIBLE INGREDIENTS' in line.upper():
-                current_section = "visible"
-            elif 'HIDDEN INGREDIENTS' in line.upper():
-                current_section = "hidden"
-            elif 'NUTRITION' in line.upper():
-                current_section = "nutrition"
-            elif '|' in line:
-                if current_section == "visible":
-                    visible += line + "\n"
-                elif current_section == "hidden":
-                    hidden += line + "\n"
-                elif current_section == "nutrition":
-                    nutrition += line + "\n"
-        
-        # Create image thumbnails
+        # Convert image to base64
+        print("🖼️ Processing images...")
         with open(image_path, "rb") as img_file:
             img_data = img_file.read()
             img_base64 = base64.b64encode(img_data).decode('utf-8')
         
         # Create thumbnail
-        from PIL import Image
-        from io import BytesIO
-        
         img = Image.open(image_path)
-        img.thumbnail((200, 200))
+        # Resize maintaining aspect ratio
+        img.thumbnail((300, 300), Image.Resampling.LANCZOS)
         buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=30)
+        img.save(buffer, format="JPEG", quality=40)
         thumb_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-
+        
+        print("💾 Saving to database...")
         meal_doc = {
             "user_id": user_id,
             "dish_prediction": dish_name,
             "image_full": img_base64,
             "image_thumb": thumb_base64,
-            "image_description": full_analysis,
-            "hidden_ingredients": hidden.strip(),
-            "nutrition_info": nutrition.strip(),
+            "image_description": visible,  # Store visible ingredients here
+            "hidden_ingredients": hidden,
+            "nutrition_info": nutrition,
             "saved_at": datetime.now().isoformat()
         }
 
-        meals_collection.insert_one(meal_doc)
+        result = meals_collection.insert_one(meal_doc)
+        print(f"✅ Saved meal with ID: {result.inserted_id}")
 
+        # Return format expected by iOS app
         return {
             "dish_prediction": dish_name,
-            "image_description": full_analysis,
-            "hidden_ingredients": hidden.strip(),
-            "nutrition_info": nutrition.strip()
+            "image_description": visible,  # iOS expects visible ingredients here
+            "hidden_ingredients": hidden,
+            "nutrition_info": nutrition
         }
         
     except Exception as e:
         print(f"❌ Analysis error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
         # Return a basic response so the app doesn't crash
         return {
             "dish_prediction": "Unable to analyze",
-            "image_description": "Analysis failed. Please try again.",
+            "image_description": "Food item | 1 | serving | Analysis failed",
             "hidden_ingredients": "",
-            "nutrition_info": "Calories | 0 | kcal | Unknown"
+            "nutrition_info": "Calories | 200 | kcal | Estimated average"
         }

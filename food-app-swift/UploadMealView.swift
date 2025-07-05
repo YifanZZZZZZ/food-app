@@ -56,8 +56,16 @@ struct UploadMealView: View {
                             .shadow(radius: 5)
 
                         if isLoading {
-                            ProgressView("Analyzing...")
-                                .foregroundColor(.white)
+                            VStack(spacing: 10) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                                    .scaleEffect(1.5)
+                                Text("Analyzing your meal...")
+                                    .foregroundColor(.white)
+                                Text("This may take up to 2 minutes")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
                         } else if !errorMessage.isEmpty {
                             Text("⚠️ \(errorMessage)")
                                 .foregroundColor(.red)
@@ -140,13 +148,39 @@ struct UploadMealView: View {
     }
 
     func pingServerBeforeAnalyze(completion: @escaping () -> Void) {
-        let url = URL(string: "https://food-app-swift.onrender.com/")!
+        let url = URL(string: "https://food-app-swift.onrender.com/ping")!
         var request = URLRequest(url: url)
-        request.timeoutInterval = 10
+        request.timeoutInterval = 30
 
         URLSession.shared.dataTask(with: request) { _, _, _ in
             DispatchQueue.main.async { completion() }
         }.resume()
+    }
+
+    func resizeImage(_ image: UIImage, maxDimension: CGFloat = 1024) -> UIImage? {
+        let size = image.size
+        
+        var newSize: CGSize
+        if size.width > size.height {
+            if size.width > maxDimension {
+                newSize = CGSize(width: maxDimension, height: size.height * maxDimension / size.width)
+            } else {
+                return image
+            }
+        } else {
+            if size.height > maxDimension {
+                newSize = CGSize(width: size.width * maxDimension / size.height, height: maxDimension)
+            } else {
+                return image
+            }
+        }
+        
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return resizedImage
     }
 
     func analyzeImage() {
@@ -154,16 +188,19 @@ struct UploadMealView: View {
         isLoading = true
         errorMessage = ""
 
-        guard let imageData = image.jpegData(compressionQuality: 0.5) else {  // Reduced quality
+        // Resize image if too large
+        let resizedImage = resizeImage(image, maxDimension: 1024) ?? image
+        
+        guard let imageData = resizedImage.jpegData(compressionQuality: 0.6) else {
             isLoading = false
-            errorMessage = "Failed to compress image."
+            errorMessage = "Failed to process image."
             return
         }
 
         let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 60  // Increase timeout to 60 seconds
+        request.timeoutInterval = 180  // 3 minutes timeout
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -188,10 +225,11 @@ struct UploadMealView: View {
 
         request.httpBody = body
 
-        // Use a custom session with longer timeout
+        // Use a custom session with much longer timeout
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 90
+        config.timeoutIntervalForRequest = 180  // 3 minutes
+        config.timeoutIntervalForResource = 300  // 5 minutes
+        config.waitsForConnectivity = true
         let session = URLSession(configuration: config)
 
         session.dataTask(with: request) { data, response, error in
@@ -200,12 +238,14 @@ struct UploadMealView: View {
             if let err = error as? URLError {
                 DispatchQueue.main.async {
                     switch err.code {
-                    case .networkConnectionLost:
-                        self.errorMessage = "⚠️ Analysis is taking too long. Please try with a smaller image."
                     case .timedOut:
-                        self.errorMessage = "⏱️ Request timed out. The server might be warming up. Please try again."
+                        self.errorMessage = "The analysis is taking longer than expected. Please try again with a clearer food image."
+                    case .notConnectedToInternet:
+                        self.errorMessage = "No internet connection. Please check your connection and try again."
+                    case .networkConnectionLost:
+                        self.errorMessage = "Connection lost. Please ensure you have a stable internet connection."
                     default:
-                        self.errorMessage = "❌ Network error: \(err.localizedDescription)"
+                        self.errorMessage = "Network error. Please try again."
                     }
                 }
                 return
@@ -213,14 +253,23 @@ struct UploadMealView: View {
 
             guard let data = data else {
                 DispatchQueue.main.async {
-                    self.errorMessage = "❌ No response from server."
+                    self.errorMessage = "No response from server. Please try again."
+                }
+                return
+            }
+
+            // Try to decode error response first
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMsg = errorResponse["error"] {
+                DispatchQueue.main.async {
+                    self.errorMessage = errorMsg
                 }
                 return
             }
 
             guard let result = try? JSONDecoder().decode(GeminiResult.self, from: data) else {
                 DispatchQueue.main.async {
-                    self.errorMessage = "❌ Failed to decode Gemini response."
+                    self.errorMessage = "Failed to process server response. Please try again."
                 }
                 return
             }
