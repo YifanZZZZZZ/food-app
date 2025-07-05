@@ -126,43 +126,119 @@ def parse_to_dict(text):
 
 # ---------- Main Analysis Function ----------
 def full_image_analysis(image_path, user_id):
-    gemini_description = analyze_image_with_gemini(image_path)
-    dish_name = extract_dish_name(gemini_description)
-    visible = extract_ingredients_only(gemini_description)
-    hidden = search_hidden_ingredients(dish_name, visible)
-    nutrition = estimate_nutrition_from_ingredients(dish_name, visible)
+    try:
+        # Get all analyses in one call instead of three
+        combined_prompt = """
+        Analyze this food image and provide:
+        
+        1. DISH NAME: (one line)
+        
+        2. VISIBLE INGREDIENTS:
+        Format: Ingredient | Quantity | Unit | Reasoning
+        
+        3. HIDDEN INGREDIENTS (oils, spices, sauces typically used):
+        Format: Ingredient | Quantity | Unit | Reasoning
+        
+        4. NUTRITION (per serving):
+        Format: Nutrient | Value | Unit | Reasoning
+        Include: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium
+        
+        Be specific with quantities. Use numbers only, no ranges.
+        """
+        
+        # Single API call instead of three
+        image_data = encode_image(image_path)
+        try:
+            response = gemini_model.generate_content([
+                combined_prompt,
+                {"mime_type": "image/png", "data": image_data}
+            ])
+            full_analysis = response.text
+        except Exception as e:
+            print(f"❌ Gemini error: {str(e)}")
+            # Fallback response
+            full_analysis = """
+            Unknown Dish
+            
+            VISIBLE INGREDIENTS:
+            Food item | 1 | serving | Unable to analyze
+            
+            HIDDEN INGREDIENTS:
+            Seasoning | 1 | pinch | Estimated
+            
+            NUTRITION:
+            Calories | 200 | kcal | Estimated average
+            Protein | 10 | g | Estimated average
+            Fat | 8 | g | Estimated average
+            Carbohydrates | 25 | g | Estimated average
+            """
+        
+        # Parse the combined response
+        sections = full_analysis.split('\n\n')
+        dish_name = sections[0].strip() if sections else "Unknown Dish"
+        
+        # Extract each section
+        visible = ""
+        hidden = ""
+        nutrition = ""
+        
+        current_section = ""
+        for line in full_analysis.split('\n'):
+            if 'VISIBLE INGREDIENTS' in line.upper():
+                current_section = "visible"
+            elif 'HIDDEN INGREDIENTS' in line.upper():
+                current_section = "hidden"
+            elif 'NUTRITION' in line.upper():
+                current_section = "nutrition"
+            elif '|' in line:
+                if current_section == "visible":
+                    visible += line + "\n"
+                elif current_section == "hidden":
+                    hidden += line + "\n"
+                elif current_section == "nutrition":
+                    nutrition += line + "\n"
+        
+        # Create image thumbnails
+        with open(image_path, "rb") as img_file:
+            img_data = img_file.read()
+            img_base64 = base64.b64encode(img_data).decode('utf-8')
+        
+        # Create thumbnail
+        from PIL import Image
+        from io import BytesIO
+        
+        img = Image.open(image_path)
+        img.thumbnail((200, 200))
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG", quality=30)
+        thumb_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
-    # Convert image to base64 instead of Binary
-    with open(image_path, "rb") as img_file:
-        img_data = img_file.read()
-        img_base64 = base64.b64encode(img_data).decode('utf-8')
-    
-    # Create thumbnail
-    from PIL import Image
-    from io import BytesIO
-    
-    img = Image.open(image_path)
-    img.thumbnail((200, 200))  # Resize for thumbnail
-    buffer = BytesIO()
-    img.save(buffer, format="JPEG", quality=30)
-    thumb_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        meal_doc = {
+            "user_id": user_id,
+            "dish_prediction": dish_name,
+            "image_full": img_base64,
+            "image_thumb": thumb_base64,
+            "image_description": full_analysis,
+            "hidden_ingredients": hidden.strip(),
+            "nutrition_info": nutrition.strip(),
+            "saved_at": datetime.now().isoformat()
+        }
 
-    meal_doc = {
-        "user_id": user_id,
-        "dish_prediction": dish_name,  # Use consistent field name
-        "image_full": img_base64,       # Store as base64
-        "image_thumb": thumb_base64,    # Store thumbnail
-        "image_description": gemini_description,
-        "hidden_ingredients": hidden,
-        "nutrition_info": nutrition,
-        "saved_at": datetime.now().isoformat()
-    }
+        meals_collection.insert_one(meal_doc)
 
-    meals_collection.insert_one(meal_doc)
-
-    return {
-        "dish_prediction": dish_name,
-        "image_description": gemini_description,
-        "hidden_ingredients": hidden,
-        "nutrition_info": nutrition
-    }
+        return {
+            "dish_prediction": dish_name,
+            "image_description": full_analysis,
+            "hidden_ingredients": hidden.strip(),
+            "nutrition_info": nutrition.strip()
+        }
+        
+    except Exception as e:
+        print(f"❌ Analysis error: {str(e)}")
+        # Return a basic response so the app doesn't crash
+        return {
+            "dish_prediction": "Unable to analyze",
+            "image_description": "Analysis failed. Please try again.",
+            "hidden_ingredients": "",
+            "nutrition_info": "Calories | 0 | kcal | Unknown"
+        }

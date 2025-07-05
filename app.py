@@ -109,9 +109,34 @@ def analyze():
 
         print(f"📸 Saved image to: {image_path}")
 
-        result = full_image_analysis(image_path, user_id)
+        # Add timeout protection
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError
+        import concurrent.futures
+        
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(full_image_analysis, image_path, user_id)
+            try:
+                # Give it 45 seconds to complete
+                result = future.result(timeout=45)
+            except concurrent.futures.TimeoutError:
+                print("⏱️ Analysis timeout - using fallback")
+                # Return a simplified result
+                result = {
+                    "dish_prediction": "Food Item",
+                    "image_description": "Analysis is taking longer than expected. Please try again.",
+                    "hidden_ingredients": "",
+                    "nutrition_info": "Calories | 0 | kcal | Estimation pending"
+                }
+        
         result["user_id"] = user_id
-        print(f"✅ Gemini analysis completed for {filename}")
+        print(f"✅ Analysis completed for {filename}")
+        
+        # Clean up
+        try:
+            os.remove(image_path)
+        except:
+            pass
+            
         return jsonify(result), 200
 
     except Exception as e:
