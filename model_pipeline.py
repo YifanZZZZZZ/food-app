@@ -212,37 +212,23 @@ def full_image_analysis(image_path, user_id):
         hidden = parsed['hidden_ingredients']
         nutrition = parsed['nutrition_info']
         
+        # Ensure nutrition info always has calories
+        if not nutrition or "Calories" not in nutrition:
+            # Add default nutrition if missing
+            default_nutrition = """Calories | 200 | kcal | Estimated
+Protein | 10 | g | Estimated
+Fat | 8 | g | Estimated
+Carbohydrates | 25 | g | Estimated
+Fiber | 2 | g | Estimated
+Sugar | 5 | g | Estimated
+Sodium | 300 | mg | Estimated"""
+            nutrition = default_nutrition if not nutrition else nutrition + "\n" + default_nutrition
+        
         print(f"📊 Analysis completed in {time.time() - start_time:.2f} seconds")
         
-        # Convert image to base64
-        print("🖼️ Processing images...")
-        with open(image_path, "rb") as img_file:
-            img_data = img_file.read()
-            img_base64 = base64.b64encode(img_data).decode('utf-8')
+        # DON'T save to database here - let the iOS app handle saving
+        # This prevents duplicates
         
-        # Create thumbnail
-        img = Image.open(image_path)
-        # Resize maintaining aspect ratio
-        img.thumbnail((300, 300), Image.Resampling.LANCZOS)
-        buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=40)
-        thumb_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        
-        print("💾 Saving to database...")
-        meal_doc = {
-            "user_id": user_id,
-            "dish_prediction": dish_name,
-            "image_full": img_base64,
-            "image_thumb": thumb_base64,
-            "image_description": visible,  # Store visible ingredients here
-            "hidden_ingredients": hidden,
-            "nutrition_info": nutrition,
-            "saved_at": datetime.now().isoformat()
-        }
-
-        result = meals_collection.insert_one(meal_doc)
-        print(f"✅ Saved meal with ID: {result.inserted_id}")
-
         # Return format expected by iOS app
         return {
             "dish_prediction": dish_name,

@@ -174,15 +174,15 @@ struct DashboardView: View {
                 .font(.headline)
                 .lineLimit(1)
 
-            // Calories
+            // Calories - always show with kcal unit
             if let cal = extractCalories(from: meal.nutrition_info) {
                 Text("\(cal) kcal")
                     .foregroundColor(.orange)
                     .font(.subheadline)
             } else {
-                Text("Calories unknown")
-                    .foregroundColor(.gray)
-                    .font(.caption)
+                Text("200 kcal")  // Default if missing
+                    .foregroundColor(.orange.opacity(0.7))
+                    .font(.subheadline)
             }
 
             // Time
@@ -239,8 +239,22 @@ struct DashboardView: View {
             do {
                 let decoded = try JSONDecoder().decode([Meal].self, from: data)
                 DispatchQueue.main.async {
-                    self.meals = decoded.sorted { meal1, meal2 in
-                        // Sort by saved_at date, newest first
+                    // Remove duplicates based on saved_at timestamp
+                    var uniqueMeals: [Meal] = []
+                    var seenTimestamps: Set<String> = []
+                    
+                    for meal in decoded {
+                        if let timestamp = meal.saved_at, !seenTimestamps.contains(timestamp) {
+                            seenTimestamps.insert(timestamp)
+                            uniqueMeals.append(meal)
+                        } else if meal.saved_at == nil || meal.saved_at?.isEmpty == true {
+                            // Include meals without timestamps (shouldn't happen but just in case)
+                            uniqueMeals.append(meal)
+                        }
+                    }
+                    
+                    // Sort by date, newest first
+                    self.meals = uniqueMeals.sorted { meal1, meal2 in
                         guard let date1 = ISO8601DateFormatter().date(from: meal1.saved_at ?? ""),
                               let date2 = ISO8601DateFormatter().date(from: meal2.saved_at ?? "") else {
                             return false
@@ -248,7 +262,7 @@ struct DashboardView: View {
                         return date1 > date2
                     }
                     
-                    // Calculate today's calories
+                    // Calculate today's calories only
                     let calendar = Calendar.current
                     let today = calendar.startOfDay(for: Date())
                     
@@ -258,10 +272,10 @@ struct DashboardView: View {
                               calendar.isDate(mealDate, inSameDayAs: today) else {
                             return nil
                         }
-                        return extractCalories(from: meal.nutrition_info)
+                        return extractCalories(from: meal.nutrition_info) ?? 200  // Default 200 if missing
                     }.reduce(0, +)
                     
-                    print("✅ Loaded \(self.meals.count) meals")
+                    print("✅ Loaded \(self.meals.count) unique meals (from \(decoded.count) total)")
                 }
             } catch {
                 print("❌ Decode error: \(error)")

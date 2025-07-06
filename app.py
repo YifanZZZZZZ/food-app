@@ -3,23 +3,22 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import os
 from pymongo import MongoClient
+from bson import ObjectId
 from model_pipeline import full_image_analysis
 import base64
 import traceback
 import time
 from io import BytesIO
 from PIL import Image
+import hashlib
 from datetime import datetime
-from auth import auth_bp  # Import the auth blueprint
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
-
-# Register the auth blueprint
-app.register_blueprint(auth_bp)
 
 # Configure MongoDB with connection pooling
 client = MongoClient(
@@ -32,8 +31,18 @@ client = MongoClient(
 db = client[os.getenv("MONGO_DB", "food-app-swift")]
 
 # Create indexes for better performance
+users_collection = db["users"]
+users_collection.create_index("email", unique=True)
+
+profiles_collection = db["profiles"]
+profiles_collection.create_index("user_id")
+
 meals_collection = db["meals"]
 meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
+
+# Configure Gemini for nutrition recalculation
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @app.route("/ping", methods=["GET"])
 def ping():
@@ -64,11 +73,114 @@ def health():
             "error": str(e)
         }), 503
 
-# Remove these routes as they're handled by auth.py:
-# - /register
-# - /login  
-# - /save-profile
-# - /get-profile (change iOS to use /profile)
+@app.route("/register", methods=["POST"])
+def register():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        # Validate required fields
+        required_fields = ["name", "email", "password"]
+        missing_fields = [field for field in required_fields if field not in data or not data[field]]
+        if missing_fields:
+            return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
+            
+        # Check if email already exists
+        if users_collection.find_one({"email": data["email"]}):
+            return jsonify({"error": "Email already registered"}), 409
+
+        # Hash password with SHA256
+        hashed_pw = hashlib.sha256(data["password"].encode()).hexdigest()
+        
+        user = {
+            "name": data["name"],
+            "email": data["email"],
+            "password": hashed_pw,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        result = users_collection.insert_one(user)
+        return jsonify({
+            "user_id": str(result.inserted_id), 
+            "name": data["name"]
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Register error: {str(e)}")
+        return jsonify({"error": "Registration failed"}), 500
+
+@app.route("/login", methods=["POST"])
+def login():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        # Validate required fields
+        if not data.get("email") or not data.get("password"):
+            return jsonify({"error": "Email and password required"}), 400
+            
+        user = users_collection.find_one({"email": data["email"]})
+        if not user:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        # Check password
+        input_pw_hash = hashlib.sha256(data["password"].encode()).hexdigest()
+        if user["password"] != input_pw_hash:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        return jsonify({
+            "user_id": str(user["_id"]), 
+            "name": user["name"]
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Login error: {str(e)}")
+        return jsonify({"error": "Login failed"}), 500
+
+@app.route("/save-profile", methods=["POST"])
+def save_profile():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty or invalid JSON"}), 400
+
+        user_id = data.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id"}), 400
+
+        # Remove user_id from data before saving
+        profile_data = {k: v for k, v in data.items() if k != "user_id"}
+        profile_data["updated_at"] = datetime.now().isoformat()
+        
+        profiles_collection.update_one(
+            {"user_id": user_id},
+            {"$set": profile_data},
+            upsert=True
+        )
+        
+        return jsonify({"message": "Profile saved"}), 200
+    except Exception as e:
+        print(f"❌ Save profile error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/get-profile", methods=["GET"])
+def get_profile():
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id parameter"}), 400
+
+        profile = profiles_collection.find_one({"user_id": user_id})
+        if not profile:
+            return jsonify({"error": "Profile not found"}), 404
+
+        profile["_id"] = str(profile["_id"])
+        return jsonify(profile), 200
+    except Exception as e:
+        print(f"❌ Get profile error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -152,10 +264,12 @@ def save_meal():
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
 
+        # Process images
         image = data.get("image", None)
         image_full = data.get("image_full") or image
         image_thumb = data.get("image_thumb") or (compress_base64_image(image) if image else None)
 
+        # Build meal document
         meal = {
             "user_id": data["user_id"],
             "dish_prediction": data["dish_prediction"],
@@ -164,11 +278,16 @@ def save_meal():
             "hidden_ingredients": data.get("hidden_ingredients", ""),
             "image_full": image_full,
             "image_thumb": image_thumb,
-            "saved_at": data.get("saved_at", time.strftime("%Y-%m-%dT%H:%M:%S"))
+            "meal_type": data.get("meal_type", "Lunch"),  # Default to Lunch if not specified
+            "saved_at": data.get("saved_at", datetime.now().isoformat())
         }
 
-        meals_collection.insert_one(meal)
-        return jsonify({"message": "Meal saved successfully"}), 200
+        result = meals_collection.insert_one(meal)
+        return jsonify({
+            "message": "Meal saved successfully",
+            "meal_id": str(result.inserted_id)
+        }), 200
+        
     except Exception as e:
         print(f"❌ Error in save_meal: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -180,7 +299,10 @@ def get_user_meals():
         if not user_id:
             return jsonify({"error": "Missing user_id parameter"}), 400
 
-        meals = list(meals_collection.find({"user_id": user_id}))
+        # Query meals for the user, sorted by date
+        meals = list(meals_collection.find(
+            {"user_id": user_id}
+        ).sort("saved_at", -1))
         
         # Process each meal to ensure compatibility
         processed_meals = []
@@ -190,16 +312,16 @@ def get_user_meals():
             
             # Handle different image storage formats
             if "image" in meal and isinstance(meal["image"], bytes):
-                # If image is stored as Binary, convert to base64
                 meal["image_thumb"] = base64.b64encode(meal["image"]).decode('utf-8')
-                meal["image_full"] = meal["image_thumb"]  # Use same image for both
-                del meal["image"]  # Remove the binary field
+                meal["image_full"] = meal["image_thumb"]
+                del meal["image"]
             
-            # Ensure all required fields exist with correct names
+            # Ensure all required fields exist
             meal.setdefault("dish_prediction", meal.get("dish", "Unknown Dish"))
             meal.setdefault("image_description", meal.get("visible_ingredients", ""))
             meal.setdefault("hidden_ingredients", "")
             meal.setdefault("nutrition_info", "")
+            meal.setdefault("meal_type", "Lunch")
             
             # Handle timestamp/saved_at field
             if "timestamp" in meal:
@@ -224,17 +346,162 @@ def get_user_meals():
         print(f"🔍 Looking up meals for user_id: {user_id}")
         print(f"📦 Total meals found: {len(processed_meals)}")
         
-        # Log first meal structure for debugging
-        if processed_meals:
-            print(f"📝 First meal keys: {list(processed_meals[0].keys())}")
-
         return jsonify(processed_meals), 200
+        
     except Exception as e:
         print(f"❌ Error in get_user_meals: {str(e)}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/update-meal", methods=["PUT"])
+def update_meal():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        meal_id = data.get("meal_id")
+        if not meal_id:
+            return jsonify({"error": "Missing meal_id"}), 400
+        
+        # Prepare update data
+        update_data = {}
+        if "dish_prediction" in data:
+            update_data["dish_prediction"] = data["dish_prediction"]
+        if "image_description" in data:
+            update_data["image_description"] = data["image_description"]
+        if "nutrition_info" in data:
+            update_data["nutrition_info"] = data["nutrition_info"]
+        if "meal_type" in data:
+            update_data["meal_type"] = data["meal_type"]
+            
+        update_data["updated_at"] = datetime.now().isoformat()
+        
+        # Update meal in database
+        result = meals_collection.update_one(
+            {"_id": ObjectId(meal_id)},
+            {"$set": update_data}
+        )
+        
+        if result.modified_count > 0:
+            return jsonify({"message": "Meal updated successfully"}), 200
+        else:
+            return jsonify({"error": "Meal not found or no changes made"}), 404
+            
+    except Exception as e:
+        print(f"❌ Error in update_meal: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/delete-meal", methods=["DELETE"])
+def delete_meal():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        meal_id = data.get("meal_id")
+        if not meal_id:
+            return jsonify({"error": "Missing meal_id"}), 400
+        
+        # Delete meal from database
+        result = meals_collection.delete_one({"_id": ObjectId(meal_id)})
+        
+        if result.deleted_count > 0:
+            return jsonify({"message": "Meal deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Meal not found"}), 404
+            
+    except Exception as e:
+        print(f"❌ Error in delete_meal: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/recalculate-nutrition", methods=["POST"])
+def recalculate_nutrition():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        ingredients = data.get("ingredients", "")
+        user_id = data.get("user_id", "")
+        
+        if not ingredients:
+            return jsonify({"error": "No ingredients provided"}), 400
+        
+        # Use Gemini to recalculate nutrition based on ingredients
+        prompt = f"""
+        Calculate the nutrition information for this list of ingredients:
+        
+        {ingredients}
+        
+        Provide the nutrition info in this exact format:
+        Nutrient | Value | Unit | Reasoning
+        
+        Must include: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium
+        
+        Be accurate based on the quantities provided. Use standard nutritional databases as reference.
+        """
+        
+        try:
+            # Configure generation
+            generation_config = genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=500,
+            )
+            
+            response = gemini_model.generate_content(
+                prompt,
+                generation_config=generation_config,
+                request_options={"timeout": 30}
+            )
+            
+            nutrition_info = response.text
+            
+            # Ensure all required nutrients are present
+            required_nutrients = ["Calories", "Protein", "Fat", "Carbohydrates", "Fiber", "Sugar", "Sodium"]
+            for nutrient in required_nutrients:
+                if nutrient.lower() not in nutrition_info.lower():
+                    # Add missing nutrients with default values
+                    if nutrient == "Calories":
+                        nutrition_info += f"\n{nutrient} | 0 | kcal | Not detected"
+                    elif nutrient == "Sodium":
+                        nutrition_info += f"\n{nutrient} | 0 | mg | Not detected"
+                    else:
+                        nutrition_info += f"\n{nutrient} | 0 | g | Not detected"
+            
+            return jsonify({
+                "nutrition_info": nutrition_info
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Gemini error in recalculate: {str(e)}")
+            # Return default nutrition if Gemini fails
+            default_nutrition = """Calories | 200 | kcal | Estimated based on typical serving
+Protein | 10 | g | Estimated based on ingredients
+Fat | 8 | g | Estimated based on ingredients
+Carbohydrates | 25 | g | Estimated based on ingredients
+Fiber | 2 | g | Estimated average
+Sugar | 5 | g | Estimated average
+Sodium | 300 | mg | Estimated average"""
+            
+            return jsonify({
+                "nutrition_info": default_nutrition
+            }), 200
+            
+    except Exception as e:
+        print(f"❌ Error in recalculate_nutrition: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    print(f"🚀 Starting Food Analyzer Backend on port {port}")
     app.run(host="0.0.0.0", port=port, threaded=True)

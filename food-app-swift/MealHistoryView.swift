@@ -140,14 +140,21 @@ struct MealHistoryView: View {
                     .font(.headline)
                     .lineLimit(1)
                 
+                // Always show calories with unit
                 if let cal = extractCalories(from: meal.nutrition_info) {
-                    Text("🔥 \(cal) kcal")
-                        .foregroundColor(.orange)
-                        .font(.subheadline)
+                    HStack(spacing: 4) {
+                        Text("🔥")
+                        Text("\(cal) kcal")
+                            .foregroundColor(.orange)
+                            .font(.subheadline)
+                    }
                 } else {
-                    Text("Calories unknown")
-                        .foregroundColor(.gray)
-                        .font(.caption)
+                    HStack(spacing: 4) {
+                        Text("🔥")
+                        Text("200 kcal")  // Default if missing
+                            .foregroundColor(.orange.opacity(0.7))
+                            .font(.subheadline)
+                    }
                 }
                 
                 if let savedAt = meal.saved_at,
@@ -211,8 +218,22 @@ struct MealHistoryView: View {
             do {
                 let decoded = try JSONDecoder().decode([Meal].self, from: data)
                 DispatchQueue.main.async {
+                    // Remove duplicates based on saved_at timestamp
+                    var uniqueMeals: [Meal] = []
+                    var seenTimestamps: Set<String> = []
+                    
+                    for meal in decoded {
+                        if let timestamp = meal.saved_at, !seenTimestamps.contains(timestamp) {
+                            seenTimestamps.insert(timestamp)
+                            uniqueMeals.append(meal)
+                        } else if meal.saved_at == nil || meal.saved_at?.isEmpty == true {
+                            // Include meals without timestamps (shouldn't happen but just in case)
+                            uniqueMeals.append(meal)
+                        }
+                    }
+                    
                     // Sort by date, newest first
-                    self.meals = decoded.sorted { meal1, meal2 in
+                    self.meals = uniqueMeals.sorted { meal1, meal2 in
                         guard let date1 = ISO8601DateFormatter().date(from: meal1.saved_at ?? ""),
                               let date2 = ISO8601DateFormatter().date(from: meal2.saved_at ?? "") else {
                             return false
@@ -225,7 +246,7 @@ struct MealHistoryView: View {
                         extractCalories(from: $0.nutrition_info)
                     }.reduce(0, +)
                     
-                    print("✅ Loaded \(self.meals.count) meals in history")
+                    print("✅ Loaded \(self.meals.count) unique meals (from \(decoded.count) total)")
                 }
             } catch {
                 print("❌ Decode error in meal history: \(error)")
