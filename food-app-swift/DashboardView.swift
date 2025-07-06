@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct DashboardView: View {
     @State private var meals: [Meal] = []
@@ -7,125 +8,96 @@ struct DashboardView: View {
     @State private var scrollToLatest = false
     @State private var showMealHistory = false
     @State private var showUploadMeal = false
+    @State private var showProfile = false
     @State private var errorMessage = ""
+    @State private var selectedTimeFilter = "Today"
+    @State private var animateCalories = false
+    @State private var calorieGoal: Int = 2000
+    
+    // Nutrition breakdown
+    @State private var totalProtein: Int = 0
+    @State private var totalCarbs: Int = 0
+    @State private var totalFat: Int = 0
+    
+    let timeFilters = ["Today", "This Week", "This Month"]
+    
+    // Get greeting based on time
+    var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 0..<12: return "Good Morning"
+        case 12..<17: return "Good Afternoon"
+        default: return "Good Evening"
+        }
+    }
+    
+    var userName: String {
+        UserDefaults.standard.string(forKey: "user_name") ?? "Friend"
+    }
+    
+    var calorieProgress: Double {
+        guard calorieGoal > 0 else { return 0 }
+        return min(Double(totalCalories) / Double(calorieGoal), 1.0)
+    }
+    
+    var calorieProgressColor: Color {
+        if calorieProgress < 0.5 { return .green }
+        else if calorieProgress < 0.8 { return .yellow }
+        else if calorieProgress < 1.0 { return .orange }
+        else { return .red }
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                // Gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.black,
+                        Color.black.opacity(0.95),
+                        Color(red: 0.1, green: 0.1, blue: 0.15)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Welcome Back 👋")
-                        .font(.largeTitle)
-                        .bold()
-                        .foregroundColor(.white)
-
-                    Text("Total Calories Consumed Today")
-                        .foregroundColor(.gray)
-
-                    Text("\(totalCalories) kcal")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundColor(.yellow)
-
-                    Divider().background(Color.white.opacity(0.3))
-
-                    HStack {
-                        Text("Past Meals")
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.9))
-
-                        Spacer()
-
-                        Button(action: {
-                            showMealHistory = true
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "list.bullet")
-                                Text("View All")
-                            }
-                            .font(.caption)
-                            .padding(6)
-                            .background(Color.white.opacity(0.1))
-                            .foregroundColor(.orange)
-                            .cornerRadius(8)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Header Section
+                        headerSection
+                        
+                        // Stats Cards
+                        statsSection
+                        
+                        // Quick Actions
+                        quickActionsSection
+                        
+                        // Recent Meals Section
+                        recentMealsSection
+                        
+                        // Nutrition Breakdown
+                        if !meals.isEmpty {
+                            nutritionBreakdownSection
                         }
+                        
+                        // Spacing for floating button
+                        Spacer(minLength: 80)
                     }
-
-                    if isLoading {
-                        HStack {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                            Text("Loading meals...")
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding()
-                    } else if !errorMessage.isEmpty {
-                        Text("⚠️ \(errorMessage)")
-                            .foregroundColor(.red)
-                            .multilineTextAlignment(.center)
-                            .padding()
-                    } else if meals.isEmpty {
-                        Spacer()
-                        VStack(spacing: 12) {
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 50))
-                                .foregroundColor(.orange.opacity(0.5))
-                            Text("No meals yet. Upload your first one!")
-                                .foregroundColor(.white.opacity(0.7))
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        Spacer()
-                    } else {
-                        ScrollViewReader { proxy in
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 16) {
-                                    ForEach(meals.indices, id: \.self) { index in
-                                        mealCard(for: meals[index])
-                                            .id(index)
-                                    }
-                                }
-                                .padding(.horizontal)
-                            }
-                            .onChange(of: scrollToLatest) { _, newValue in
-                                if newValue && !meals.isEmpty {
-                                    withAnimation {
-                                        proxy.scrollTo(meals.count - 1, anchor: .center)
-                                    }
-                                    scrollToLatest = false
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer()
+                    .padding(.horizontal)
+                    .padding(.top, 10)
                 }
-                .padding()
 
-                // ✅ Floating Upload Button
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            showUploadMeal = true
-                        }) {
-                            Image(systemName: "plus")
-                                .font(.title)
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.orange)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                        .padding()
-                    }
-                }
+                // Floating Upload Button
+                floatingUploadButton
             }
             .preferredColorScheme(.dark)
             .onAppear {
+                loadUserPreferences()
                 fetchMeals()
+                withAnimation(.easeOut(duration: 0.8)) {
+                    animateCalories = true
+                }
             }
             .refreshable {
                 await fetchMealsAsync()
@@ -140,71 +112,305 @@ struct DashboardView: View {
             .sheet(isPresented: $showUploadMeal) {
                 UploadMealView()
             }
+            .sheet(isPresented: $showProfile) {
+                ProfileView()
+            }
         }
     }
-
-    @ViewBuilder
-    func mealCard(for meal: Meal) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Image
-            if let base64 = meal.image_thumb ?? meal.image_full,
-               !base64.isEmpty,
-               let img = decodeBase64ToUIImage(base64String: base64) {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 240, height: 140)
-                    .clipped()
-                    .cornerRadius(12)
-            } else {
-                Rectangle()
-                    .fill(Color.orange.opacity(0.3))
-                    .frame(width: 240, height: 140)
-                    .cornerRadius(12)
+    
+    // MARK: - View Components
+    
+    var headerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(greeting)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Text("\(userName) 👋")
+                        .font(.title2)
+                        .bold()
+                        .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                // Profile Button
+                Button(action: { showProfile = true }) {
+                    Image(systemName: "person.circle.fill")
+                        .font(.title)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+            
+            // Date
+            Text(Date().formatted(date: .complete, time: .omitted))
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.6))
+        }
+    }
+    
+    var statsSection: some View {
+        VStack(spacing: 16) {
+            // Main Calorie Card
+            VStack(spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Calories")
+                            .font(.headline)
+                            .foregroundColor(.white.opacity(0.8))
+                        
+                        HStack(alignment: .bottom, spacing: 4) {
+                            Text("\(animateCalories ? totalCalories : 0)")
+                                .font(.system(size: 42, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: totalCalories)
+                            
+                            Text("/ \(calorieGoal) kcal")
+                                .font(.callout)
+                                .foregroundColor(.gray)
+                                .padding(.bottom, 6)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Circular Progress
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 8)
+                            .frame(width: 80, height: 80)
+                        
+                        Circle()
+                            .trim(from: 0, to: animateCalories ? calorieProgress : 0)
+                            .stroke(calorieProgressColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                            .frame(width: 80, height: 80)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.easeOut(duration: 1.0), value: calorieProgress)
+                        
+                        Text("\(Int(calorieProgress * 100))%")
+                            .font(.caption.bold())
+                            .foregroundColor(.white)
+                    }
+                }
+                
+                // Progress Bar
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 8)
+                        
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(calorieProgressColor)
+                            .frame(width: animateCalories ? geometry.size.width * calorieProgress : 0, height: 8)
+                            .animation(.easeOut(duration: 1.0), value: calorieProgress)
+                    }
+                }
+                .frame(height: 8)
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.white.opacity(0.08))
                     .overlay(
-                        Image(systemName: "photo")
-                            .foregroundColor(.white.opacity(0.5))
-                            .font(.largeTitle)
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
                     )
-            }
-
-            // Dish name
-            Text(meal.dish_prediction)
-                .foregroundColor(.white)
-                .font(.headline)
-                .lineLimit(1)
-
-            // Calories - always show with kcal unit
-            if let cal = extractCalories(from: meal.nutrition_info) {
-                Text("\(cal) kcal")
-                    .foregroundColor(.orange)
-                    .font(.subheadline)
-            } else {
-                Text("200 kcal")  // Default if missing
-                    .foregroundColor(.orange.opacity(0.7))
-                    .font(.subheadline)
-            }
-
-            // Time
-            if let savedAt = meal.saved_at,
-               !savedAt.isEmpty,
-               let date = ISO8601DateFormatter().date(from: savedAt) {
-                Text("🕒 \(formattedDate(date))")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+            )
+            
+            // Macro Stats
+            HStack(spacing: 12) {
+                MacroCard(
+                    title: "Protein",
+                    value: totalProtein,
+                    unit: "g",
+                    color: .blue,
+                    icon: "flame.fill"
+                )
+                
+                MacroCard(
+                    title: "Carbs",
+                    value: totalCarbs,
+                    unit: "g",
+                    color: .orange,
+                    icon: "leaf.fill"
+                )
+                
+                MacroCard(
+                    title: "Fat",
+                    value: totalFat,
+                    unit: "g",
+                    color: .purple,
+                    icon: "drop.fill"
+                )
             }
         }
-        .padding()
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(14)
-        .shadow(radius: 2)
     }
-
+    
+    var quickActionsSection: some View {
+        HStack(spacing: 12) {
+            QuickActionButton(
+                title: "Add Water",
+                icon: "drop.fill",
+                color: .blue
+            ) {
+                // Add water tracking
+            }
+            
+            QuickActionButton(
+                title: "Exercise",
+                icon: "figure.run",
+                color: .green
+            ) {
+                // Add exercise
+            }
+            
+            QuickActionButton(
+                title: "Weight",
+                icon: "scalemass.fill",
+                color: .purple
+            ) {
+                // Log weight
+            }
+            
+            QuickActionButton(
+                title: "Goals",
+                icon: "target",
+                color: .orange
+            ) {
+                showProfile = true
+            }
+        }
+    }
+    
+    var recentMealsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Recent Meals")
+                    .font(.title3.bold())
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Button(action: { showMealHistory = true }) {
+                    HStack(spacing: 4) {
+                        Text("View All")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+            }
+            
+            if isLoading && meals.isEmpty {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                    Spacer()
+                }
+                .padding(.vertical, 40)
+            } else if meals.isEmpty {
+                EmptyStateCard()
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(Array(meals.prefix(5))) { meal in
+                            MealCard(meal: meal)
+                                .onTapGesture {
+                                    // Navigate to detail
+                                }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    var nutritionBreakdownSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Today's Nutrition")
+                .font(.title3.bold())
+                .foregroundColor(.white)
+            
+            VStack(spacing: 12) {
+                NutritionBar(
+                    nutrient: "Protein",
+                    current: totalProtein,
+                    goal: 50,
+                    color: .blue
+                )
+                
+                NutritionBar(
+                    nutrient: "Carbohydrates",
+                    current: totalCarbs,
+                    goal: 250,
+                    color: .orange
+                )
+                
+                NutritionBar(
+                    nutrient: "Fat",
+                    current: totalFat,
+                    goal: 65,
+                    color: .purple
+                )
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.white.opacity(0.05))
+            )
+        }
+    }
+    
+    var floatingUploadButton: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button(action: {
+                    withAnimation(.spring()) {
+                        showUploadMeal = true
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "camera.fill")
+                        Text("Add Meal")
+                    }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.orange, Color.orange.opacity(0.8)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(25)
+                    .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 4)
+                }
+                .padding()
+            }
+        }
+    }
+    
+    // MARK: - Functions
+    
+    func loadUserPreferences() {
+        // Load calorie goal from profile
+        if let profileCalorieTarget = UserDefaults.standard.object(forKey: "calorie_target") as? Int {
+            calorieGoal = profileCalorieTarget
+        }
+    }
+    
     func fetchMeals() {
         guard let userId = UserDefaults.standard.string(forKey: "user_id"),
               !userId.isEmpty,
               let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userId)") else {
-            print("⚠️ Invalid user ID or URL")
             errorMessage = "Please log in to view meals"
             return
         }
@@ -224,22 +430,12 @@ struct DashboardView: View {
                 return
             }
             
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    self.errorMessage = "No data received"
-                }
-                return
-            }
-            
-            // Debug: Print raw response
-            if let jsonString = String(data: data, encoding: .utf8) {
-                print("📋 Raw response: \(jsonString.prefix(500))...")
-            }
+            guard let data = data else { return }
             
             do {
                 let decoded = try JSONDecoder().decode([Meal].self, from: data)
                 DispatchQueue.main.async {
-                    // Remove duplicates based on saved_at timestamp
+                    // Remove duplicates
                     var uniqueMeals: [Meal] = []
                     var seenTimestamps: Set<String> = []
                     
@@ -247,13 +443,9 @@ struct DashboardView: View {
                         if let timestamp = meal.saved_at, !seenTimestamps.contains(timestamp) {
                             seenTimestamps.insert(timestamp)
                             uniqueMeals.append(meal)
-                        } else if meal.saved_at == nil || meal.saved_at?.isEmpty == true {
-                            // Include meals without timestamps (shouldn't happen but just in case)
-                            uniqueMeals.append(meal)
                         }
                     }
                     
-                    // Sort by date, newest first
                     self.meals = uniqueMeals.sorted { meal1, meal2 in
                         guard let date1 = ISO8601DateFormatter().date(from: meal1.saved_at ?? ""),
                               let date2 = ISO8601DateFormatter().date(from: meal2.saved_at ?? "") else {
@@ -262,28 +454,57 @@ struct DashboardView: View {
                         return date1 > date2
                     }
                     
-                    // Calculate today's calories only
-                    let calendar = Calendar.current
-                    let today = calendar.startOfDay(for: Date())
-                    
-                    self.totalCalories = self.meals.compactMap { meal in
-                        guard let savedAt = meal.saved_at,
-                              let mealDate = ISO8601DateFormatter().date(from: savedAt),
-                              calendar.isDate(mealDate, inSameDayAs: today) else {
-                            return nil
-                        }
-                        return extractCalories(from: meal.nutrition_info) ?? 200  // Default 200 if missing
-                    }.reduce(0, +)
-                    
-                    print("✅ Loaded \(self.meals.count) unique meals (from \(decoded.count) total)")
+                    self.calculateTodayStats()
                 }
             } catch {
                 print("❌ Decode error: \(error)")
-                DispatchQueue.main.async {
-                    self.errorMessage = "Failed to load meals. Please try again."
-                }
             }
         }.resume()
+    }
+    
+    func calculateTodayStats() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        var calories = 0
+        var protein = 0
+        var carbs = 0
+        var fat = 0
+        
+        for meal in meals {
+            guard let savedAt = meal.saved_at,
+                  let mealDate = ISO8601DateFormatter().date(from: savedAt),
+                  calendar.isDate(mealDate, inSameDayAs: today) else {
+                continue
+            }
+            
+            // Extract nutrition values
+            calories += extractCalories(from: meal.nutrition_info) ?? 0
+            protein += extractNutrient(name: "protein", from: meal.nutrition_info) ?? 0
+            carbs += extractNutrient(name: "carbohydrates", from: meal.nutrition_info) ?? 0
+            fat += extractNutrient(name: "fat", from: meal.nutrition_info) ?? 0
+        }
+        
+        withAnimation {
+            self.totalCalories = calories
+            self.totalProtein = protein
+            self.totalCarbs = carbs
+            self.totalFat = fat
+        }
+    }
+    
+    func extractNutrient(name: String, from text: String) -> Int? {
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count >= 2, parts[0].lowercased().contains(name.lowercased()) {
+                return Int(parts[1])
+            }
+        }
+        return nil
+    }
+    
+    func extractCalories(from text: String) -> Int? {
+        extractNutrient(name: "calories", from: text)
     }
     
     func fetchMealsAsync() async {
@@ -294,13 +515,124 @@ struct DashboardView: View {
             }
         }
     }
+}
 
-    func decodeBase64ToUIImage(base64String: String) -> UIImage? {
-        guard let data = Data(base64Encoded: base64String),
-              let image = UIImage(data: data) else { return nil }
-        return image
+// MARK: - Supporting Views
+
+struct MacroCard: View {
+    let title: String
+    let value: Int
+    let unit: String
+    let color: Color
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(color)
+            
+            Text("\(value)\(unit)")
+                .font(.headline)
+                .foregroundColor(.white)
+            
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.gray)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(color.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(color.opacity(0.3), lineWidth: 1)
+                )
+        )
     }
+}
 
+struct QuickActionButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundColor(color)
+                
+                Text(title)
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.08))
+            )
+        }
+    }
+}
+
+struct MealCard: View {
+    let meal: Meal
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Image
+            if let base64 = meal.image_thumb ?? meal.image_full,
+               !base64.isEmpty,
+               let data = Data(base64Encoded: base64),
+               let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 160, height: 120)
+                    .clipped()
+                    .cornerRadius(12)
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.orange.opacity(0.3))
+                    .frame(width: 160, height: 120)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .foregroundColor(.white.opacity(0.5))
+                    )
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(meal.dish_prediction)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                if let calories = extractCalories(from: meal.nutrition_info) {
+                    Text("\(calories) kcal")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                
+                if let mealType = meal.meal_type {
+                    Text(mealType)
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+    
     func extractCalories(from text: String) -> Int? {
         for line in text.split(separator: "\n") {
             let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -310,20 +642,95 @@ struct DashboardView: View {
         }
         return nil
     }
+}
 
-    func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        let calendar = Calendar.current
-        
-        if calendar.isDateInToday(date) {
-            formatter.dateFormat = "h:mm a"
-            return "Today, " + formatter.string(from: date)
-        } else if calendar.isDateInYesterday(date) {
-            formatter.dateFormat = "h:mm a"
-            return "Yesterday, " + formatter.string(from: date)
-        } else {
-            formatter.dateFormat = "MMM d, h:mm a"
-            return formatter.string(from: date)
+struct EmptyStateCard: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.orange.opacity(0.6))
+            
+            VStack(spacing: 4) {
+                Text("No meals yet")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                Text("Start tracking by adding your first meal")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(style: StrokeStyle(lineWidth: 2, dash: [5]))
+                        .foregroundColor(.white.opacity(0.1))
+                )
+        )
+    }
+}
+
+struct NutritionBar: View {
+    let nutrient: String
+    let current: Int
+    let goal: Int
+    let color: Color
+    
+    var progress: Double {
+        guard goal > 0 else { return 0 }
+        return min(Double(current) / Double(goal), 1.0)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(nutrient)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.8))
+                
+                Spacer()
+                
+                Text("\(current)g / \(goal)g")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.1))
+                        .frame(height: 8)
+                    
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color)
+                        .frame(width: geometry.size.width * progress, height: 8)
+                }
+            }
+            .frame(height: 8)
+        }
+    }
+}
+
+// Placeholder ProfileView
+struct ProfileView: View {
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ProfileSetupView()
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                }
         }
     }
 }
