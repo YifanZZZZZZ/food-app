@@ -5,15 +5,24 @@ struct UploadMealView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isLoading = false
-    @State private var detectedDish: String?
-    @State private var visibleIngredientLines: [String] = []
-    @State private var hiddenIngredientLines: [String] = []
+    @State private var detectedDish: String = ""
+    @State private var editableDishName: String = ""
+    @State private var visibleIngredients: [EditableIngredient] = []
+    @State private var hiddenIngredients: [EditableIngredient] = []
     @State private var nutritionLines: [String] = []
     @State private var rawNutritionInfo: String = ""
     @State private var calories: Int?
     @State private var showToast = false
     @State private var errorMessage = ""
     @State private var retryCount = 0
+    
+    // New states for meal customization
+    @State private var selectedDate = Date()
+    @State private var selectedMealType = "Lunch"
+    @State private var isEditingIngredients = false
+    @State private var showDatePicker = false
+    
+    let mealTypes = ["Breakfast", "Lunch", "Evening Snacks", "Dinner"]
 
     @Environment(\.dismiss) var dismiss
 
@@ -22,129 +31,225 @@ struct UploadMealView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                VStack(spacing: 20) {
-                    Text("Upload a Meal")
-                        .font(.title2)
-                        .bold()
-                        .foregroundColor(.white)
-
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Text("Pick an Image")
-                            .padding()
-                            .frame(width: 200)
-                            .background(Color.orange)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        Text("Upload a Meal")
+                            .font(.title2)
+                            .bold()
                             .foregroundColor(.white)
-                            .cornerRadius(12)
-                    }
-                    .onChange(of: selectedPhoto, initial: false) { _, newItem in
-                        Task {
-                            if let data = try? await newItem?.loadTransferable(type: Data.self),
-                               let uiImage = UIImage(data: data) {
-                                self.selectedImage = uiImage
-                                self.errorMessage = ""
-                                self.retryCount = 0
-                                pingServerBeforeAnalyze {
+
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            Text("Pick an Image")
+                                .padding()
+                                .frame(width: 200)
+                                .background(Color.orange)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                        }
+                        .onChange(of: selectedPhoto, initial: false) { _, newItem in
+                            Task {
+                                if let data = try? await newItem?.loadTransferable(type: Data.self),
+                                   let uiImage = UIImage(data: data) {
+                                    self.selectedImage = uiImage
+                                    self.errorMessage = ""
+                                    self.retryCount = 0
                                     analyzeImage()
                                 }
                             }
                         }
-                    }
 
-                    if let image = selectedImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 180)
-                            .cornerRadius(10)
-                            .shadow(radius: 5)
+                        if let image = selectedImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 180)
+                                .cornerRadius(10)
+                                .shadow(radius: 5)
 
-                        if isLoading {
-                            VStack(spacing: 10) {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                                    .scaleEffect(1.5)
-                                Text("Analyzing your meal...")
-                                    .foregroundColor(.white)
-                                Text("This may take up to 1 minute")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.7))
-                                if retryCount > 0 {
-                                    Text("Retry attempt \(retryCount)")
-                                        .font(.caption2)
-                                        .foregroundColor(.orange.opacity(0.7))
-                                }
-                            }
-                        } else if !errorMessage.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.orange)
-                                
-                                Text("Analysis Failed")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                
-                                Text(errorMessage)
-                                    .foregroundColor(.red)
-                                    .multilineTextAlignment(.center)
-                                    .font(.subheadline)
-                                
-                                Button(action: {
-                                    errorMessage = ""
-                                    analyzeImage()
-                                }) {
-                                    Label("Try Again", systemImage: "arrow.clockwise")
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 10)
-                                        .background(Color.orange)
+                            if isLoading {
+                                VStack(spacing: 10) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                                        .scaleEffect(1.5)
+                                    Text("Analyzing your meal...")
                                         .foregroundColor(.white)
-                                        .cornerRadius(20)
+                                    Text("This may take up to 1 minute")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.7))
                                 }
-                            }
-                            .padding()
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(12)
-                        } else if let dish = detectedDish {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("🍛 Dish: \(dish)")
+                            } else if !errorMessage.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.orange)
+                                    
+                                    Text("Analysis Failed")
+                                        .font(.headline)
                                         .foregroundColor(.white)
-                                        .fontWeight(.semibold)
-
-                                    if !visibleIngredientLines.isEmpty {
-                                        Text("🧾 Visible Ingredients:")
-                                            .font(.headline)
-                                            .foregroundColor(.orange)
-                                        ForEach(visibleIngredientLines, id: \.self) {
-                                            Text("• \($0)").foregroundColor(.white.opacity(0.9))
+                                    
+                                    Text(errorMessage)
+                                        .foregroundColor(.red)
+                                        .multilineTextAlignment(.center)
+                                        .font(.subheadline)
+                                    
+                                    Button(action: {
+                                        errorMessage = ""
+                                        analyzeImage()
+                                    }) {
+                                        Label("Try Again", systemImage: "arrow.clockwise")
+                                            .padding(.horizontal, 20)
+                                            .padding(.vertical, 10)
+                                            .background(Color.orange)
+                                            .foregroundColor(.white)
+                                            .cornerRadius(20)
+                                    }
+                                }
+                                .padding()
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(12)
+                            } else if !detectedDish.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    // Editable dish name
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("🍛 Dish Name")
+                                            .foregroundColor(.white)
+                                            .fontWeight(.semibold)
+                                        
+                                        TextField("Dish name", text: $editableDishName)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .foregroundColor(.black)
+                                    }
+                                    
+                                    // Meal Type and Date Selection
+                                    HStack(spacing: 16) {
+                                        // Meal Type Picker
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Meal Type")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                            
+                                            Menu {
+                                                ForEach(mealTypes, id: \.self) { type in
+                                                    Button(type) {
+                                                        selectedMealType = type
+                                                    }
+                                                }
+                                            } label: {
+                                                HStack {
+                                                    Text(selectedMealType)
+                                                    Spacer()
+                                                    Image(systemName: "chevron.down")
+                                                }
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .background(Color.white.opacity(0.1))
+                                                .cornerRadius(8)
+                                                .foregroundColor(.white)
+                                            }
+                                        }
+                                        
+                                        // Date Picker
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Date")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                            
+                                            Button(action: { showDatePicker.toggle() }) {
+                                                HStack {
+                                                    Text(formatDate(selectedDate))
+                                                    Spacer()
+                                                    Image(systemName: "calendar")
+                                                }
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .background(Color.white.opacity(0.1))
+                                                .cornerRadius(8)
+                                                .foregroundColor(.white)
+                                            }
                                         }
                                     }
-
-                                    if !hiddenIngredientLines.isEmpty {
-                                        Text("🫙 Hidden Ingredients:")
-                                            .font(.headline)
-                                            .foregroundColor(.pink)
-                                        ForEach(hiddenIngredientLines, id: \.self) {
-                                            Text("• \($0)").foregroundColor(.white.opacity(0.8))
+                                    
+                                    // Editable Ingredients Section
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        HStack {
+                                            Text("🧾 Ingredients")
+                                                .font(.headline)
+                                                .foregroundColor(.orange)
+                                            
+                                            Spacer()
+                                            
+                                            Button(action: { isEditingIngredients.toggle() }) {
+                                                Text(isEditingIngredients ? "Done" : "Edit")
+                                                    .font(.caption)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 4)
+                                                    .background(Color.orange.opacity(0.2))
+                                                    .cornerRadius(12)
+                                                    .foregroundColor(.orange)
+                                            }
+                                        }
+                                        
+                                        ForEach($visibleIngredients) { $ingredient in
+                                            IngredientRow(ingredient: $ingredient, isEditing: isEditingIngredients)
+                                        }
+                                        
+                                        if isEditingIngredients {
+                                            Button(action: addNewIngredient) {
+                                                Label("Add Ingredient", systemImage: "plus.circle")
+                                                    .font(.caption)
+                                                    .foregroundColor(.green)
+                                            }
                                         }
                                     }
-
-                                    if !nutritionLines.isEmpty {
-                                        Text("🍎 Nutrition Info:")
-                                            .font(.headline)
-                                            .foregroundColor(.green)
-                                        ForEach(nutritionLines, id: \.self) {
-                                            Text("• \($0)").foregroundColor(.white.opacity(0.9))
+                                    
+                                    // Hidden Ingredients
+                                    if !hiddenIngredients.isEmpty {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("🫙 Hidden Ingredients")
+                                                .font(.headline)
+                                                .foregroundColor(.pink)
+                                            
+                                            ForEach($hiddenIngredients) { $ingredient in
+                                                IngredientRow(ingredient: $ingredient, isEditing: isEditingIngredients)
+                                            }
                                         }
                                     }
-
-                                    if let cal = calories {
-                                        Text("🔥 Estimated Calories: \(cal) kcal")
-                                            .foregroundColor(.yellow)
-                                            .font(.headline)
-                                            .padding(.top, 8)
+                                    
+                                    // Nutrition Info
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text("🍎 Nutrition Info")
+                                                .font(.headline)
+                                                .foregroundColor(.green)
+                                            
+                                            if isEditingIngredients {
+                                                Button(action: recalculateNutrition) {
+                                                    Label("Recalculate", systemImage: "arrow.clockwise")
+                                                        .font(.caption)
+                                                        .padding(.horizontal, 12)
+                                                        .padding(.vertical, 4)
+                                                        .background(Color.green.opacity(0.2))
+                                                        .cornerRadius(12)
+                                                        .foregroundColor(.green)
+                                                }
+                                            }
+                                        }
+                                        
+                                        ForEach(nutritionLines, id: \.self) { line in
+                                            Text("• \(line)")
+                                                .foregroundColor(.white.opacity(0.9))
+                                                .font(.subheadline)
+                                        }
+                                        
+                                        if let cal = calories {
+                                            Text("🔥 Total Calories: \(cal) kcal")
+                                                .foregroundColor(.yellow)
+                                                .font(.headline)
+                                                .padding(.top, 4)
+                                        }
                                     }
-
+                                    
+                                    // Save Button
                                     HStack {
                                         Spacer()
                                         Button(action: saveMealToBackend) {
@@ -167,11 +272,10 @@ struct UploadMealView: View {
                             }
                         }
                     }
-
-                    Spacer()
+                    .padding()
                 }
-                .padding()
 
+                // Toast notification
                 VStack {
                     if showToast {
                         Text("✅ Meal saved successfully!")
@@ -187,17 +291,54 @@ struct UploadMealView: View {
                 }
             }
             .preferredColorScheme(.dark)
+            .sheet(isPresented: $showDatePicker) {
+                DatePickerSheet(selectedDate: $selectedDate)
+            }
         }
     }
-
-    func pingServerBeforeAnalyze(completion: @escaping () -> Void) {
-        let url = URL(string: "https://food-app-swift.onrender.com/ping")!
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 10
-
-        URLSession.shared.dataTask(with: request) { _, _, _ in
-            DispatchQueue.main.async { completion() }
-        }.resume()
+    
+    // Helper functions
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+    
+    func addNewIngredient() {
+        visibleIngredients.append(EditableIngredient(
+            id: UUID().uuidString,
+            name: "New Ingredient",
+            quantity: "1",
+            unit: "piece"
+        ))
+    }
+    
+    func recalculateNutrition() {
+        // Call backend to recalculate nutrition based on edited ingredients
+        guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
+        
+        isLoading = true
+        
+        // Prepare ingredients data
+        let ingredientsList = visibleIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
+        
+        // Call a new endpoint to recalculate nutrition
+        NetworkManager.shared.recalculateNutrition(
+            ingredients: ingredientsList,
+            userId: userId
+        ) { result in
+            self.isLoading = false
+            
+            switch result {
+            case .success(let nutritionData):
+                self.nutritionLines = self.parseNutritionLines(from: nutritionData.nutrition_info)
+                self.calories = self.extractCalories(from: nutritionData.nutrition_info)
+                self.rawNutritionInfo = nutritionData.nutrition_info
+                
+            case .failure(let error):
+                self.errorMessage = "Failed to recalculate nutrition: \(error.localizedDescription)"
+            }
+        }
     }
 
     func resizeImage(_ image: UIImage, maxDimension: CGFloat = 800) -> UIImage? {
@@ -244,185 +385,148 @@ struct UploadMealView: View {
         isLoading = true
         errorMessage = ""
         
-        // Show immediate feedback
-        detectedDish = nil
-        visibleIngredientLines = []
-        hiddenIngredientLines = []
+        NetworkManager.shared.checkHealth { isHealthy, status in
+            if !isHealthy {
+                self.isLoading = false
+                self.errorMessage = "Server is not responding. Please try again later."
+                return
+            }
+            
+            self.performImageAnalysis(image: image)
+        }
+    }
+
+    func performImageAnalysis(image: UIImage) {
+        // Clear previous results
+        detectedDish = ""
+        editableDishName = ""
+        visibleIngredients = []
+        hiddenIngredients = []
         nutritionLines = []
         calories = nil
         
-        // Resize image more aggressively
         let resizedImage = resizeImage(image, maxDimension: 800) ?? image
-        
-        // Compress image
         guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
             isLoading = false
             errorMessage = "Failed to process image. Please try a different photo."
             return
         }
         
-        // Check image size
-        let imageSizeMB = Double(imageData.count) / (1024.0 * 1024.0)
-        print("📷 Image size: \(imageSizeMB)MB")
+        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
+        if userId.isEmpty {
+            isLoading = false
+            errorMessage = "Login session missing. Please log in again."
+            return
+        }
         
-        analyzeWithRetry(imageData: imageData, retryCount: 0)
+        NetworkManager.shared.uploadImage(imageData: imageData, userId: userId) { result in
+            self.isLoading = false
+            
+            switch result {
+            case .success(let geminiResult):
+                self.detectedDish = geminiResult.dish_prediction
+                self.editableDishName = geminiResult.dish_prediction
+                self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
+                self.hiddenIngredients = self.parseIngredientsToEditable(from: geminiResult.hidden_ingredients ?? "")
+                self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
+                self.calories = self.extractCalories(from: geminiResult.nutrition_info)
+                self.rawNutritionInfo = geminiResult.nutrition_info
+                
+            case .failure(let error):
+                if (error as NSError).code == NSURLErrorTimedOut {
+                    self.errorMessage = "Analysis timed out. Try a clearer image or check your connection."
+                } else {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
-    private func analyzeWithRetry(imageData: Data, retryCount: Int) {
-        self.retryCount = retryCount
-        let maxRetries = 2
-        
-        let url = URL(string: "https://food-app-swift.onrender.com/analyze")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 90  // 90 seconds timeout
-        
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+    func saveMealToBackend() {
+        guard !editableDishName.isEmpty else {
+            errorMessage = "Please enter a dish name"
+            return
+        }
         
         let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
         if userId.isEmpty {
             errorMessage = "Login session missing. Please log in again."
-            isLoading = false
             return
         }
-        
-        var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"image\"; filename=\"upload.jpg\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
-        body.append(imageData)
-        body.append("\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"user_id\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(userId)\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        
-        request.httpBody = body
-        
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 90
-        config.timeoutIntervalForResource = 120
-        config.waitsForConnectivity = true
-        let session = URLSession(configuration: config)
-        
-        session.dataTask(with: request) { data, response, error in
-            if let error = error as? URLError {
-                if error.code == .timedOut && retryCount < maxRetries {
-                    // Retry with exponential backoff
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(retryCount + 1) * 2) {
-                        self.analyzeWithRetry(imageData: imageData, retryCount: retryCount + 1)
-                    }
-                    return
-                }
-                
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    switch error.code {
-                    case .timedOut:
-                        self.errorMessage = "Analysis timed out. Try a clearer image or check your connection."
-                    case .notConnectedToInternet:
-                        self.errorMessage = "No internet connection."
-                    case .networkConnectionLost:
-                        self.errorMessage = "Connection lost. Please check your network."
-                    default:
-                        self.errorMessage = "Network error. Please try again."
-                    }
-                }
-                return
-            }
-            
-            DispatchQueue.main.async { self.isLoading = false }
-            
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    self.errorMessage = "No response from server."
-                }
-                return
-            }
-            
-            // Log response for debugging
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("📋 Response: \(responseString.prefix(200))...")
-            }
-            
-            // Try to decode error response first
-            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
-               let errorMsg = errorResponse["error"] {
-                DispatchQueue.main.async {
-                    self.errorMessage = errorMsg
-                }
-                return
-            }
-            
-            // Try to decode success response
-            if let result = try? JSONDecoder().decode(GeminiResult.self, from: data) {
-                DispatchQueue.main.async {
-                    self.detectedDish = result.dish_prediction
-                    self.visibleIngredientLines = self.parseIngredientLines(from: result.image_description)
-                    self.hiddenIngredientLines = self.parseIngredientLines(from: result.hidden_ingredients ?? "")
-                    self.nutritionLines = self.parseNutritionLines(from: result.nutrition_info)
-                    self.calories = self.extractCalories(from: result.nutrition_info)
-                    self.rawNutritionInfo = result.nutrition_info
-                    print("✅ Analysis successful: \(result.dish_prediction)")
-                }
-            } else {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Failed to process server response. Please try again."
-                }
-            }
-        }.resume()
-    }
 
-    func saveMealToBackend() {
-        guard let dish = detectedDish else { return }
-        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
-        if userId.isEmpty { return }
-
-        // Use compressed images for storage
         let fullImageData = compressImage(selectedImage!, maxSizeKB: 1000)
         let thumbnailData = compressImage(selectedImage!, maxSizeKB: 100)
         
         let fullImageBase64 = fullImageData?.base64EncodedString() ?? ""
         let thumbnailBase64 = thumbnailData?.base64EncodedString() ?? ""
+        
+        // Convert editable ingredients back to string format
+        let visibleIngredientsString = visibleIngredients.map {
+            "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
+        }.joined(separator: "\n")
+        
+        let hiddenIngredientsString = hiddenIngredients.map {
+            "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
+        }.joined(separator: "\n")
 
         let payload: [String: Any] = [
             "user_id": userId,
-            "dish_prediction": dish,
-            "image_description": visibleIngredientLines.joined(separator: "\n"),
-            "hidden_ingredients": hiddenIngredientLines.joined(separator: "\n"),
+            "dish_prediction": editableDishName,
+            "image_description": visibleIngredientsString,
+            "hidden_ingredients": hiddenIngredientsString,
             "nutrition_info": rawNutritionInfo,
             "image_full": fullImageBase64,
             "image_thumb": thumbnailBase64,
-            "saved_at": ISO8601DateFormatter().string(from: Date())
+            "meal_type": selectedMealType,
+            "saved_at": ISO8601DateFormatter().string(from: selectedDate)
         ]
 
         guard let url = URL(string: "https://food-app-swift.onrender.com/save-meal"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+              let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            errorMessage = "Failed to prepare meal data"
+            return
+        }
+
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: config)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                DispatchQueue.main.async {
+        session.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.errorMessage = "Failed to save meal: \(error.localizedDescription)"
+                    return
+                }
+                
+                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                     NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
-                    showToast = true
+                    self.showToast = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        dismiss()
+                        self.dismiss()
                     }
+                } else {
+                    self.errorMessage = "Failed to save meal. Please try again."
                 }
             }
         }.resume()
     }
-
-    func parseIngredientLines(from text: String) -> [String] {
+    
+    func parseIngredientsToEditable(from text: String) -> [EditableIngredient] {
         text.split(separator: "\n").compactMap { line in
-            let parts = line.split(separator: "|")
-            guard parts.count == 4 else { return nil }
-            return "\(parts[0].trimmingCharacters(in: .whitespaces)) — \(parts[1].trimmingCharacters(in: .whitespaces)) \(parts[2].trimmingCharacters(in: .whitespaces))"
+            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count >= 3 else { return nil }
+            return EditableIngredient(
+                id: UUID().uuidString,
+                name: parts[0],
+                quantity: parts[1],
+                unit: parts[2]
+            )
         }
     }
 
@@ -445,5 +549,73 @@ struct UploadMealView: View {
             }
         }
         return nil
+    }
+}
+
+// Supporting Views and Models
+struct EditableIngredient: Identifiable {
+    let id: String
+    var name: String
+    var quantity: String
+    var unit: String
+}
+
+struct IngredientRow: View {
+    @Binding var ingredient: EditableIngredient
+    let isEditing: Bool
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            if isEditing {
+                TextField("Name", text: $ingredient.name)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .frame(maxWidth: .infinity)
+                
+                TextField("Qty", text: $ingredient.quantity)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .frame(width: 60)
+                    .keyboardType(.decimalPad)
+                
+                TextField("Unit", text: $ingredient.unit)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .frame(width: 80)
+            } else {
+                Text("• \(ingredient.name) — \(ingredient.quantity) \(ingredient.unit)")
+                    .foregroundColor(.white.opacity(0.9))
+                    .font(.subheadline)
+            }
+        }
+    }
+}
+
+struct DatePickerSheet: View {
+    @Binding var selectedDate: Date
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                DatePicker(
+                    "Select Date",
+                    selection: $selectedDate,
+                    in: ...Date(),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(GraphicalDatePickerStyle())
+                .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Select Date")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
