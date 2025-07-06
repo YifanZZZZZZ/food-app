@@ -1,9 +1,7 @@
-import torch
 from PIL import Image
 import google.generativeai as genai
 import base64
 import os
-import re
 import time
 from datetime import datetime
 from dotenv import load_dotenv
@@ -12,10 +10,6 @@ from io import BytesIO
 
 # ---------- Load Environment ----------
 load_dotenv()
-
-# ---------- Device Config ----------
-DEVICE = torch.device("mps" if torch.backends.mps.is_available() else
-                      "cuda" if torch.cuda.is_available() else "cpu")
 
 # ---------- Gemini API Setup ----------
 GEN_API_KEY = os.getenv("GEMINI_API_KEY")
