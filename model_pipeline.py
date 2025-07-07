@@ -208,6 +208,7 @@ NUTRITION ANALYSIS: [nutrient] | [amount] | [unit] | [source]
 
 def generate_failure_response(error_details):
     """Generate a failure response that indicates analysis couldn't be completed"""
+    newline_char = '\n'
     return f"""Analysis failed: {error_details}
 
 DISH NAME:
@@ -220,13 +221,7 @@ HIDDEN INGREDIENTS:
 Could not identify | 0 | g | Image analysis failed - {error_details}
 
 NUTRITION ANALYSIS:
-Calories | 0 | kcal | Analysis failed - unable to calculate
-Protein | 0 | g | Analysis failed - unable to calculate
-Fat | 0 | g | Analysis failed - unable to calculate
-Carbohydrates | 0 | g | Analysis failed - unable to calculate
-Fiber | 0 | g | Analysis failed - unable to calculate
-Sugar | 0 | g | Analysis failed - unable to calculate
-Sodium | 0 | mg | Analysis failed - unable to calculate
+Calories | 0 | kcal | Analysis failed - unable to calculate{newline_char}Protein | 0 | g | Analysis failed - unable to calculate{newline_char}Fat | 0 | g | Analysis failed - unable to calculate{newline_char}Carbohydrates | 0 | g | Analysis failed - unable to calculate{newline_char}Fiber | 0 | g | Analysis failed - unable to calculate{newline_char}Sugar | 0 | g | Analysis failed - unable to calculate{newline_char}Sodium | 0 | mg | Analysis failed - unable to calculate
 
 ERROR DETAILS: {error_details}
 """
@@ -355,11 +350,12 @@ def full_image_analysis(image_path, user_id):
         
         # Log results
         analysis_time = time.time() - start_time
+        newline_char = '\n'
         print(f"📊 FULLY DYNAMIC analysis completed in {analysis_time:.2f} seconds")
         print(f"📍 Dish: {dish_name}")
-        print(f"📍 Visible ingredients: {len(visible.split('\\n'))} items")
-        print(f"📍 Hidden ingredients: {len(hidden.split('\\n'))} items")
-        print(f"📍 Nutrition facts: {len(nutrition.split('\\n'))} values")
+        print(f"📍 Visible ingredients: {len(visible.split(newline_char))} items")
+        print(f"📍 Hidden ingredients: {len(hidden.split(newline_char))} items")
+        print(f"📍 Nutrition facts: {len(nutrition.split(newline_char))} values")
         print(f"📍 ALL VALUES FROM IMAGE ANALYSIS - NO HARDCODED DATA")
         
         # Return in expected format
@@ -378,11 +374,12 @@ def full_image_analysis(image_path, user_id):
         traceback.print_exc()
         
         # Return error response that clearly indicates failure
+        newline_char = '\n'
         return {
             "dish_prediction": f"Analysis failed: {str(e)}",
             "image_description": f"Analysis error | 0 | g | {str(e)}",
             "hidden_ingredients": f"Analysis error | 0 | g | {str(e)}",
-            "nutrition_info": f"Calories | 0 | kcal | Analysis failed: {str(e)}\\nProtein | 0 | g | Analysis failed: {str(e)}\\nFat | 0 | g | Analysis failed: {str(e)}\\nCarbohydrates | 0 | g | Analysis failed: {str(e)}\\nFiber | 0 | g | Analysis failed: {str(e)}\\nSugar | 0 | g | Analysis failed: {str(e)}\\nSodium | 0 | mg | Analysis failed: {str(e)}",
+            "nutrition_info": f"Calories | 0 | kcal | Analysis failed: {str(e)}{newline_char}Protein | 0 | g | Analysis failed: {str(e)}{newline_char}Fat | 0 | g | Analysis failed: {str(e)}{newline_char}Carbohydrates | 0 | g | Analysis failed: {str(e)}{newline_char}Fiber | 0 | g | Analysis failed: {str(e)}{newline_char}Sugar | 0 | g | Analysis failed: {str(e)}{newline_char}Sodium | 0 | mg | Analysis failed: {str(e)}",
             "analysis_time": 0,
             "user_id": user_id,
             "error": str(e)
@@ -456,7 +453,8 @@ CALCULATION NOTES:
                             nutrition_lines.append(line)
                 
                 if nutrition_lines:
-                    result = '\\n'.join(nutrition_lines)
+                    newline_char = '\n'
+                    result = newline_char.join(nutrition_lines)
                     print(f"✅ Nutrition recalculated successfully")
                     return result
             
@@ -470,13 +468,8 @@ CALCULATION NOTES:
     except Exception as e:
         print(f"❌ Nutrition recalculation error: {str(e)}")
         error_msg = str(e)
-        return f"""Calories | 0 | kcal | Recalculation failed: {error_msg}
-Protein | 0 | g | Recalculation failed: {error_msg}
-Fat | 0 | g | Recalculation failed: {error_msg}
-Carbohydrates | 0 | g | Recalculation failed: {error_msg}
-Fiber | 0 | g | Recalculation failed: {error_msg}
-Sugar | 0 | g | Recalculation failed: {error_msg}
-Sodium | 0 | mg | Recalculation failed: {error_msg}"""
+        newline_char = '\n'
+        return f"""Calories | 0 | kcal | Recalculation failed: {error_msg}{newline_char}Protein | 0 | g | Recalculation failed: {error_msg}{newline_char}Fat | 0 | g | Recalculation failed: {error_msg}{newline_char}Carbohydrates | 0 | g | Recalculation failed: {error_msg}{newline_char}Fiber | 0 | g | Recalculation failed: {error_msg}{newline_char}Sugar | 0 | g | Recalculation failed: {error_msg}{newline_char}Sodium | 0 | mg | Recalculation failed: {error_msg}"""
 
 # ---------- Image Validation Function ----------
 def validate_image_for_analysis(image_path):
