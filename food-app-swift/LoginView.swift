@@ -17,154 +17,267 @@ struct LoginView: View {
     @State private var loginFailed = false
     @State private var loginErrorMessage = ""
     @State private var navigate = false
+    @State private var isLoading = false
+    @State private var showRegister = false
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Image("LoginBackground")
-                    .resizable()
-                    .scaledToFill()
-                    .ignoresSafeArea()
-                    .overlay(Color.black.opacity(0.45))
-                    .blur(radius: 4)
+                // Gradient background matching dashboard
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.black,
+                        Color.black.opacity(0.95),
+                        Color(red: 0.1, green: 0.1, blue: 0.15)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
-                VStack {
-                    Spacer(minLength: 80)
-
-                    Text("Your AI Nutrition Assistant")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.75))
-                        .padding(.bottom, 6)
-
-                    Text("Snap & Track")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.bottom, 30)
-
-                    VStack(spacing: 24) {
-                        Text("Welcome Back")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-
-                        VStack(spacing: 4) {
-                            TextField("Email", text: $email)
-                                .keyboardType(.emailAddress)
-                                .autocapitalization(.none)
-                                .padding()
-                                .background(Color.white.opacity(0.28))
-                                .cornerRadius(14)
-                                .foregroundColor(.white)
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 280)
-                                .onChange(of: email) { _, _ in validateEmail() }
-
-                            if !emailError.isEmpty {
-                                Text(emailError)
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 13))
-                                    .frame(width: 280, alignment: .leading)
+                ScrollView {
+                    VStack(spacing: 32) {
+                        // Logo and Header
+                        VStack(spacing: 20) {
+                            Image(systemName: "camera.macro.circle.fill")
+                                .font(.system(size: 80))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.orange, .orange.opacity(0.7)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: .orange.opacity(0.3), radius: 20)
+                            
+                            VStack(spacing: 8) {
+                                Text("Welcome Back")
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                
+                                Text("Log in to track your nutrition")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
                             }
                         }
+                        .padding(.top, 60)
 
-                        VStack(spacing: 4) {
-                            HStack {
-                                if isSecure {
-                                    SecureField("Password", text: $password)
-                                } else {
-                                    TextField("Password", text: $password)
-                                }
-                                Button(action: { isSecure.toggle() }) {
-                                    Image(systemName: isSecure ? "eye.slash" : "eye")
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                            }
-                            .padding()
-                            .background(Color.white.opacity(0.28))
-                            .cornerRadius(14)
-                            .foregroundColor(.white)
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 280)
-                            .onChange(of: password) { _, _ in validatePassword() }
-
-                            if !passwordError.isEmpty {
-                                Text(passwordError)
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 13))
-                                    .frame(width: 280, alignment: .leading)
-                            }
-                        }
-
-                        Toggle(isOn: $rememberMe) {
-                            Text("Remember Me")
-                                .foregroundColor(.white.opacity(0.8))
-                        }
-                        .toggleStyle(SwitchToggleStyle(tint: .orange))
-                        .frame(width: 280, alignment: .leading)
-
-                        Button("Login") {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            validateEmail()
-                            validatePassword()
-                            if emailError.isEmpty && passwordError.isEmpty {
-                                pingServerBeforeLogin {
-                                    attemptLogin()
-                                }
-                            }
-                        }
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(width: 280)
-                        .background(Color.orange)
-                        .cornerRadius(14)
-
-                        if loginFailed {
-                            Text(loginErrorMessage)
-                                .foregroundColor(.red)
-                                .font(.footnote)
-                                .multilineTextAlignment(.center)
-                                .frame(width: 280)
-                        }
-
-                        HStack {
-                            Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
-                            Text("OR").foregroundColor(.gray.opacity(0.7)).padding(.horizontal, 6)
-                            Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.4))
-                        }
-                        .frame(width: 260)
-
-                        VStack(spacing: 12) {
-                            SignInWithAppleButton(.signIn, onRequest: { _ in }, onCompletion: { _ in })
-                                .frame(width: 280, height: 44)
-                                .cornerRadius(10)
-
-                            Button(action: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            }) {
+                        // Login Form
+                        VStack(spacing: 20) {
+                            // Email Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Email")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .textCase(.uppercase)
+                                    .tracking(1)
+                                
                                 HStack {
-                                    Image(systemName: "globe")
-                                    Text("Sign in with Google").fontWeight(.medium)
+                                    Image(systemName: "envelope.fill")
+                                        .foregroundColor(.gray)
+                                        .frame(width: 20)
+                                    
+                                    TextField("Enter your email", text: $email)
+                                        .keyboardType(.emailAddress)
+                                        .autocapitalization(.none)
+                                        .foregroundColor(.white)
+                                        .onChange(of: email) { _, _ in validateEmail() }
                                 }
-                                .frame(width: 280, height: 44)
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.white.opacity(0.08))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(emailError.isEmpty ? Color.white.opacity(0.1) : Color.red.opacity(0.5), lineWidth: 1)
+                                        )
+                                )
+                                
+                                if !emailError.isEmpty {
+                                    Text(emailError)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        .transition(.opacity)
+                                }
+                            }
+
+                            // Password Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Password")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .textCase(.uppercase)
+                                    .tracking(1)
+                                
+                                HStack {
+                                    Image(systemName: "lock.fill")
+                                        .foregroundColor(.gray)
+                                        .frame(width: 20)
+                                    
+                                    if isSecure {
+                                        SecureField("Enter your password", text: $password)
+                                            .foregroundColor(.white)
+                                    } else {
+                                        TextField("Enter your password", text: $password)
+                                            .foregroundColor(.white)
+                                    }
+                                    
+                                    Button(action: { isSecure.toggle() }) {
+                                        Image(systemName: isSecure ? "eye.slash.fill" : "eye.fill")
+                                            .foregroundColor(.gray)
+                                            .font(.caption)
+                                    }
+                                }
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.white.opacity(0.08))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(passwordError.isEmpty ? Color.white.opacity(0.1) : Color.red.opacity(0.5), lineWidth: 1)
+                                        )
+                                )
+                                .onChange(of: password) { _, _ in validatePassword() }
+                                
+                                if !passwordError.isEmpty {
+                                    Text(passwordError)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        .transition(.opacity)
+                                }
+                            }
+
+                            // Remember Me & Forgot Password
+                            HStack {
+                                Toggle(isOn: $rememberMe) {
+                                    Text("Remember me")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                                .toggleStyle(CheckboxToggleStyle())
+                                
+                                Spacer()
+                                
+                                Button("Forgot Password?") {
+                                    // Handle forgot password
+                                }
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            }
+
+                            // Login Button
+                            Button(action: {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                validateEmail()
+                                validatePassword()
+                                if emailError.isEmpty && passwordError.isEmpty {
+                                    pingServerBeforeLogin {
+                                        attemptLogin()
+                                    }
+                                }
+                            }) {
+                                ZStack {
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else {
+                                        HStack {
+                                            Text("Log In")
+                                                .fontWeight(.semibold)
+                                            Image(systemName: "arrow.right")
+                                        }
+                                    }
+                                }
                                 .foregroundColor(.white)
-                                .background(Color.red.opacity(0.85))
-                                .cornerRadius(10)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [.orange, .orange.opacity(0.8)]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .cornerRadius(12)
+                                .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 4)
                             }
-                        }
+                            .disabled(isLoading)
 
-                        HStack(spacing: 4) {
-                            Text("New here?")
-                                .foregroundColor(.white.opacity(0.75))
-                            NavigationLink(destination: RegisterView()) {
-                                Text("Register")
-                                    .foregroundColor(.orange)
-                                    .fontWeight(.semibold)
+                            if loginFailed {
+                                HStack {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundColor(.red)
+                                    Text(loginErrorMessage)
+                                        .foregroundColor(.red)
+                                        .font(.caption)
+                                }
+                                .padding()
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(8)
                             }
+
+                            // Divider
+                            HStack {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 1)
+                                
+                                Text("OR")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.horizontal, 16)
+                                
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 1)
+                            }
+                            .padding(.vertical, 8)
+
+                            // Social Login
+                            VStack(spacing: 12) {
+                                SignInWithAppleButton(.signIn, onRequest: { _ in }, onCompletion: { _ in })
+                                    .frame(height: 50)
+                                    .cornerRadius(12)
+
+                                Button(action: {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "globe")
+                                        Text("Continue with Google")
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color.white.opacity(0.1))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                            )
+                                    )
+                                }
+                            }
+
+                            // Register Link
+                            HStack(spacing: 4) {
+                                Text("New to the app?")
+                                    .foregroundColor(.gray)
+                                
+                                Button("Create Account") {
+                                    showRegister = true
+                                }
+                                .foregroundColor(.orange)
+                                .fontWeight(.semibold)
+                            }
+                            .font(.subheadline)
                         }
-                        .font(.footnote)
+                        .padding(.horizontal, 24)
+                        
+                        Spacer(minLength: 50)
                     }
-
-                    Spacer()
                 }
             }
             .preferredColorScheme(.dark)
@@ -174,20 +287,27 @@ struct LoginView: View {
             .navigationDestination(isPresented: $navigate) {
                 ProfileSetupView()
             }
+            .navigationDestination(isPresented: $showRegister) {
+                RegisterView()
+            }
         }
     }
 
     // MARK: - Validation
     private func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
-        emailError = trimmed.isEmpty ? "Email is required" :
-            (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
+        withAnimation(.easeInOut(duration: 0.2)) {
+            emailError = trimmed.isEmpty ? "Email is required" :
+                (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
+        }
     }
 
     private func validatePassword() {
         let trimmed = password.trimmingCharacters(in: .whitespaces)
-        passwordError = trimmed.isEmpty ? "Password is required" :
-            (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            passwordError = trimmed.isEmpty ? "Password is required" :
+                (trimmed.count < 6 ? "Password must be at least 6 characters" : "")
+        }
     }
 
     // MARK: - /ping First
@@ -209,11 +329,15 @@ struct LoginView: View {
 
     // MARK: - Login API Call
     private func attemptLogin() {
+        isLoading = true
+        loginFailed = false
+        
         guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
 
         let payload = ["email": email, "password": password]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
             print("❌ Failed to serialize payload")
+            isLoading = false
             return
         }
 
@@ -229,11 +353,15 @@ struct LoginView: View {
         let session = URLSession(configuration: config)
 
         session.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                self.isLoading = false
+            }
+            
             if let error = error {
                 print("❌ Login Error: \(error.localizedDescription)")
                 DispatchQueue.main.async {
-                    loginFailed = true
-                    loginErrorMessage = "Network error: \(error.localizedDescription)"
+                    self.loginFailed = true
+                    self.loginErrorMessage = "Network error. Please try again."
                 }
                 return
             }
@@ -241,41 +369,58 @@ struct LoginView: View {
             guard let httpResponse = response as? HTTPURLResponse,
                   let data = data else {
                 DispatchQueue.main.async {
-                    loginFailed = true
-                    loginErrorMessage = "Unexpected server response."
+                    self.loginFailed = true
+                    self.loginErrorMessage = "Unexpected server response."
                 }
                 return
             }
 
-            print("🌐 Status Code: \(httpResponse.statusCode)")
-            print("🧾 Raw Response: \(String(data: data, encoding: .utf8) ?? "Invalid JSON")")
-
             if httpResponse.statusCode == 200 {
                 if let response = try? JSONDecoder().decode(LoginResponse.self, from: data) {
                     DispatchQueue.main.async {
-                        SessionManager.shared.login(id: response.user_id, name: response.name)
-                        navigate = true
+                        withAnimation(.spring()) {
+                            SessionManager.shared.login(id: response.user_id, name: response.name)
+                            self.navigate = true
+                        }
                     }
                 } else {
                     DispatchQueue.main.async {
-                        loginFailed = true
-                        loginErrorMessage = "Login succeeded but decoding failed."
+                        self.loginFailed = true
+                        self.loginErrorMessage = "Login succeeded but decoding failed."
                     }
                 }
             } else {
                 if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                    let serverMessage = json["error"] as? String {
                     DispatchQueue.main.async {
-                        loginFailed = true
-                        loginErrorMessage = "Server: \(serverMessage)"
+                        self.loginFailed = true
+                        self.loginErrorMessage = serverMessage
                     }
                 } else {
                     DispatchQueue.main.async {
-                        loginFailed = true
-                        loginErrorMessage = "Unknown login failure."
+                        self.loginFailed = true
+                        self.loginErrorMessage = "Invalid email or password."
                     }
                 }
             }
         }.resume()
+    }
+}
+
+// Custom Checkbox Toggle Style
+struct CheckboxToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button(action: {
+            configuration.isOn.toggle()
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
+                    .foregroundColor(configuration.isOn ? .orange : .gray)
+                    .font(.system(size: 20))
+                
+                configuration.label
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
