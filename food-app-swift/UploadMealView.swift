@@ -16,292 +16,370 @@ struct UploadMealView: View {
     @State private var errorMessage = ""
     @State private var retryCount = 0
     
-    // New states for meal customization
     @State private var selectedDate = Date()
     @State private var selectedMealType = "Lunch"
     @State private var isEditingIngredients = false
     @State private var showDatePicker = false
+    @State private var showCamera = false
+    @State private var analysisStep = 0 // 0: select, 1: analyzing, 2: results
     
     let mealTypes = ["Breakfast", "Lunch", "Evening Snacks", "Dinner"]
-
+    
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                // Gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.black,
+                        Color.black.opacity(0.95),
+                        Color(red: 0.1, green: 0.1, blue: 0.15)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
-                        Text("Upload a Meal")
-                            .font(.title2)
-                            .bold()
-                            .foregroundColor(.white)
-
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Text("Pick an Image")
-                                .padding()
-                                .frame(width: 200)
-                                .background(Color.orange)
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                        }
-                        .onChange(of: selectedPhoto, initial: false) { _, newItem in
-                            Task {
-                                if let data = try? await newItem?.loadTransferable(type: Data.self),
-                                   let uiImage = UIImage(data: data) {
-                                    self.selectedImage = uiImage
-                                    self.errorMessage = ""
-                                    self.retryCount = 0
-                                    analyzeImage()
-                                }
+                    VStack(spacing: 24) {
+                        // Header
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Add Meal")
+                                    .font(.largeTitle.bold())
+                                    .foregroundColor(.white)
+                                
+                                Text("Snap and track your nutrition")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                            
+                            Spacer()
+                            
+                            Button(action: { dismiss() }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.gray)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.top, 20)
 
-                        if let image = selectedImage {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(height: 180)
-                                .cornerRadius(10)
-                                .shadow(radius: 5)
+                        if selectedImage == nil {
+                            // Image Selection
+                            VStack(spacing: 20) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .fill(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [
+                                                    Color.orange.opacity(0.2),
+                                                    Color.orange.opacity(0.1)
+                                                ]),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(height: 250)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 20)
+                                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [10]))
+                                                .foregroundColor(.orange.opacity(0.5))
+                                        )
+                                    
+                                    VStack(spacing: 16) {
+                                        Image(systemName: "camera.fill")
+                                            .font(.system(size: 50))
+                                            .foregroundColor(.orange)
+                                        
+                                        Text("Add a photo of your meal")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                        
+                                        Text("Take a photo or choose from library")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                
+                                HStack(spacing: 16) {
+                                    // Camera Button
+                                    Button(action: { showCamera = true }) {
+                                        HStack {
+                                            Image(systemName: "camera.fill")
+                                            Text("Camera")
+                                        }
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 16)
+                                        .background(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [.orange, .orange.opacity(0.8)]),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .cornerRadius(12)
+                                    }
+                                    
+                                    // Gallery Button
+                                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                                        HStack {
+                                            Image(systemName: "photo.fill")
+                                            Text("Gallery")
+                                        }
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 16)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .fill(Color.white.opacity(0.1))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 12)
+                                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                                )
+                                        )
+                                    }
+                                    .onChange(of: selectedPhoto, initial: false) { _, newItem in
+                                        Task {
+                                            if let data = try? await newItem?.loadTransferable(type: Data.self),
+                                               let uiImage = UIImage(data: data) {
+                                                self.selectedImage = uiImage
+                                                self.errorMessage = ""
+                                                self.retryCount = 0
+                                                analyzeImage()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        } else {
+                            // Image Preview
+                            ZStack {
+                                Image(uiImage: selectedImage!)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(height: 250)
+                                    .clipped()
+                                    .cornerRadius(20)
+                                    .overlay(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color.clear,
+                                                Color.black.opacity(0.3)
+                                            ]),
+                                            startPoint: .center,
+                                            endPoint: .bottom
+                                        )
+                                        .cornerRadius(20)
+                                    )
+                                
+                                // Change Photo Button
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        Button(action: {
+                                            selectedImage = nil
+                                            detectedDish = ""
+                                            visibleIngredients = []
+                                            nutritionLines = []
+                                        }) {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "arrow.triangle.2.circlepath")
+                                                Text("Change")
+                                            }
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                Capsule()
+                                                    .fill(Color.black.opacity(0.6))
+                                                    .blur(radius: 10)
+                                            )
+                                        }
+                                        .padding()
+                                    }
+                                    Spacer()
+                                }
+                            }
+                            .padding(.horizontal)
 
                             if isLoading {
-                                VStack(spacing: 10) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                                        .scaleEffect(1.5)
-                                    Text("Analyzing your meal...")
-                                        .foregroundColor(.white)
-                                    Text("This may take up to 1 minute")
-                                        .font(.caption)
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
+                                AnalyzingView()
                             } else if !errorMessage.isEmpty {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.orange)
-                                    
-                                    Text("Analysis Failed")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                    
-                                    Text(errorMessage)
-                                        .foregroundColor(.red)
-                                        .multilineTextAlignment(.center)
-                                        .font(.subheadline)
-                                    
-                                    Button(action: {
-                                        errorMessage = ""
-                                        analyzeImage()
-                                    }) {
-                                        Label("Try Again", systemImage: "arrow.clockwise")
-                                            .padding(.horizontal, 20)
-                                            .padding(.vertical, 10)
-                                            .background(Color.orange)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(20)
-                                    }
-                                }
-                                .padding()
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(12)
+                                ErrorView(message: errorMessage, retry: analyzeImage)
+                                    .padding(.horizontal)
                             } else if !detectedDish.isEmpty {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    // Editable dish name
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text("🍛 Dish Name")
-                                            .foregroundColor(.white)
-                                            .fontWeight(.semibold)
+                                // Analysis Results
+                                VStack(spacing: 20) {
+                                    // Dish Name
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        Text("DISH NAME")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                            .tracking(1)
                                         
                                         TextField("Dish name", text: $editableDishName)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                            .foregroundColor(.black)
+                                            .font(.title3.bold())
+                                            .foregroundColor(.white)
+                                            .padding()
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .fill(Color.white.opacity(0.08))
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 12)
+                                                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                                    )
+                                            )
                                     }
+                                    .padding(.horizontal)
                                     
-                                    // Meal Type and Date Selection
+                                    // Meal Type and Date
                                     HStack(spacing: 16) {
-                                        // Meal Type Picker
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Meal Type")
-                                                .font(.caption)
-                                                .foregroundColor(.gray)
-                                            
-                                            Menu {
-                                                ForEach(mealTypes, id: \.self) { type in
-                                                    Button(type) {
-                                                        selectedMealType = type
-                                                    }
-                                                }
-                                            } label: {
-                                                HStack {
-                                                    Text(selectedMealType)
-                                                    Spacer()
-                                                    Image(systemName: "chevron.down")
-                                                }
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
-                                                .background(Color.white.opacity(0.1))
-                                                .cornerRadius(8)
-                                                .foregroundColor(.white)
-                                            }
-                                        }
-                                        
-                                        // Date Picker
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Date")
-                                                .font(.caption)
-                                                .foregroundColor(.gray)
-                                            
-                                            Button(action: { showDatePicker.toggle() }) {
-                                                HStack {
-                                                    Text(formatDate(selectedDate))
-                                                    Spacer()
-                                                    Image(systemName: "calendar")
-                                                }
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
-                                                .background(Color.white.opacity(0.1))
-                                                .cornerRadius(8)
-                                                .foregroundColor(.white)
-                                            }
-                                        }
+                                        MealTypeSelector(selectedType: $selectedMealType)
+                                        DateSelector(selectedDate: $selectedDate, showPicker: $showDatePicker)
                                     }
+                                    .padding(.horizontal)
                                     
-                                    // Editable Ingredients Section
-                                    VStack(alignment: .leading, spacing: 12) {
+                                    // Ingredients Section
+                                    VStack(alignment: .leading, spacing: 16) {
                                         HStack {
-                                            Text("🧾 Ingredients")
-                                                .font(.headline)
-                                                .foregroundColor(.orange)
+                                            HStack(spacing: 8) {
+                                                Image(systemName: "leaf.fill")
+                                                    .foregroundColor(Color.green)
+                                                
+                                                Text("Ingredients")
+                                                    .font(.headline)
+                                                    .foregroundColor(.white)
+                                            }
                                             
                                             Spacer()
                                             
                                             Button(action: { isEditingIngredients.toggle() }) {
                                                 Text(isEditingIngredients ? "Done" : "Edit")
                                                     .font(.caption)
-                                                    .padding(.horizontal, 12)
-                                                    .padding(.vertical, 4)
-                                                    .background(Color.orange.opacity(0.2))
-                                                    .cornerRadius(12)
+                                                    .fontWeight(.semibold)
                                                     .foregroundColor(.orange)
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.vertical, 6)
+                                                    .background(
+                                                        Capsule()
+                                                            .fill(Color.orange.opacity(0.2))
+                                                            .overlay(
+                                                                Capsule()
+                                                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                                            )
+                                                    )
                                             }
                                         }
                                         
-                                        ForEach($visibleIngredients) { $ingredient in
-                                            IngredientRow(ingredient: $ingredient, isEditing: isEditingIngredients)
-                                        }
-                                        
-                                        if isEditingIngredients {
-                                            Button(action: addNewIngredient) {
-                                                Label("Add Ingredient", systemImage: "plus.circle")
-                                                    .font(.caption)
-                                                    .foregroundColor(.green)
+                                        VStack(spacing: 12) {
+                                            ForEach($visibleIngredients) { $ingredient in
+                                                if isEditingIngredients {
+                                                    EditableIngredientRow(
+                                                        ingredient: $ingredient,
+                                                        onDelete: { removeIngredient(id: ingredient.id) }
+                                                    )
+                                                } else {
+                                                    IngredientDisplay(
+                                                        text: "\(ingredient.name) — \(ingredient.quantity) \(ingredient.unit)"
+                                                    )
+                                                }
                                             }
-                                        }
-                                    }
-                                    
-                                    // Hidden Ingredients
-                                    if !hiddenIngredients.isEmpty {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("🫙 Hidden Ingredients")
-                                                .font(.headline)
-                                                .foregroundColor(.pink)
-                                            
-                                            ForEach($hiddenIngredients) { $ingredient in
-                                                IngredientRow(ingredient: $ingredient, isEditing: isEditingIngredients)
-                                            }
-                                        }
-                                    }
-                                    
-                                    // Nutrition Info
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Text("🍎 Nutrition Info")
-                                                .font(.headline)
-                                                .foregroundColor(.green)
                                             
                                             if isEditingIngredients {
-                                                Button(action: recalculateNutrition) {
-                                                    Label("Recalculate", systemImage: "arrow.clockwise")
-                                                        .font(.caption)
-                                                        .padding(.horizontal, 12)
-                                                        .padding(.vertical, 4)
-                                                        .background(Color.green.opacity(0.2))
-                                                        .cornerRadius(12)
-                                                        .foregroundColor(.green)
+                                                Button(action: addNewIngredient) {
+                                                    HStack {
+                                                        Image(systemName: "plus.circle.fill")
+                                                        Text("Add Ingredient")
+                                                    }
+                                                    .font(.subheadline)
+                                                    .foregroundColor(Color.green)
                                                 }
                                             }
                                         }
-                                        
-                                        ForEach(nutritionLines, id: \.self) { line in
-                                            Text("• \(line)")
-                                                .foregroundColor(.white.opacity(0.9))
-                                                .font(.subheadline)
-                                        }
-                                        
-                                        if let cal = calories {
-                                            Text("🔥 Total Calories: \(cal) kcal")
-                                                .foregroundColor(.yellow)
-                                                .font(.headline)
-                                                .padding(.top, 4)
-                                        }
                                     }
+                                    .padding(.horizontal)
+                                    
+                                    // Nutrition Info
+                                    NutritionCard(
+                                        nutritionLines: nutritionLines,
+                                        calories: calories,
+                                        onRecalculate: isEditingIngredients ? recalculateNutrition : nil
+                                    )
+                                    .padding(.horizontal)
                                     
                                     // Save Button
-                                    HStack {
-                                        Spacer()
-                                        Button(action: saveMealToBackend) {
-                                            HStack {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                Text("Save to Diary")
-                                            }
-                                            .padding(.horizontal, 24)
-                                            .padding(.vertical, 12)
-                                            .background(Color.green)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(25)
+                                    Button(action: saveMealToBackend) {
+                                        HStack {
+                                            Image(systemName: "checkmark.circle.fill")
+                                            Text("Save to Diary")
                                         }
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 16)
+                                        .background(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [Color.green, Color.green.opacity(0.8)]),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .cornerRadius(12)
+                                        .shadow(color: Color.green.opacity(0.3), radius: 8, x: 0, y: 4)
                                     }
-                                    .padding(.top, 10)
+                                    .padding(.horizontal)
+                                    .padding(.bottom, 40)
                                 }
-                                .padding()
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(14)
                             }
                         }
                     }
-                    .padding()
                 }
 
-                // Toast notification
-                VStack {
-                    if showToast {
-                        Text("✅ Meal saved successfully!")
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 12)
-                            .background(Color.green)
-                            .cornerRadius(12)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                            .padding(.bottom, 40)
+                // Success Toast
+                if showToast {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                            Text("Meal saved successfully!")
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(
+                            Capsule()
+                                .fill(Color.green)
+                                .shadow(color: Color.green.opacity(0.3), radius: 10)
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.bottom, 50)
                     }
-                    Spacer()
+                    .animation(.spring(), value: showToast)
                 }
             }
             .preferredColorScheme(.dark)
             .sheet(isPresented: $showDatePicker) {
                 DatePickerSheet(selectedDate: $selectedDate)
             }
+            .sheet(isPresented: $showCamera) {
+                ImagePicker(image: $selectedImage, sourceType: .camera)
+            }
         }
     }
     
     // Helper functions
-    func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
+    
+    func removeIngredient(id: String) {
+        visibleIngredients.removeAll { $0.id == id }
     }
     
     func addNewIngredient() {
@@ -314,15 +392,12 @@ struct UploadMealView: View {
     }
     
     func recalculateNutrition() {
-        // Call backend to recalculate nutrition based on edited ingredients
         guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
         
         isLoading = true
         
-        // Prepare ingredients data
         let ingredientsList = visibleIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
         
-        // Call a new endpoint to recalculate nutrition
         NetworkManager.shared.recalculateNutrition(
             ingredients: ingredientsList,
             userId: userId
@@ -335,8 +410,8 @@ struct UploadMealView: View {
                 self.calories = self.extractCalories(from: nutritionData.nutrition_info)
                 self.rawNutritionInfo = nutritionData.nutrition_info
                 
-            case .failure(let error):
-                self.errorMessage = "Failed to recalculate nutrition: \(error.localizedDescription)"
+            case .failure(_):
+                self.errorMessage = "Failed to recalculate nutrition"
             }
         }
     }
@@ -397,7 +472,6 @@ struct UploadMealView: View {
     }
 
     func performImageAnalysis(image: UIImage) {
-        // Clear previous results
         detectedDish = ""
         editableDishName = ""
         visibleIngredients = []
@@ -408,7 +482,7 @@ struct UploadMealView: View {
         let resizedImage = resizeImage(image, maxDimension: 800) ?? image
         guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
             isLoading = false
-            errorMessage = "Failed to process image. Please try a different photo."
+            errorMessage = "Failed to process image."
             return
         }
         
@@ -424,17 +498,19 @@ struct UploadMealView: View {
             
             switch result {
             case .success(let geminiResult):
-                self.detectedDish = geminiResult.dish_prediction
-                self.editableDishName = geminiResult.dish_prediction
-                self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
-                self.hiddenIngredients = self.parseIngredientsToEditable(from: geminiResult.hidden_ingredients ?? "")
-                self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
-                self.calories = self.extractCalories(from: geminiResult.nutrition_info)
-                self.rawNutritionInfo = geminiResult.nutrition_info
+                withAnimation(.spring()) {
+                    self.detectedDish = geminiResult.dish_prediction
+                    self.editableDishName = geminiResult.dish_prediction
+                    self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
+                    self.hiddenIngredients = self.parseIngredientsToEditable(from: geminiResult.hidden_ingredients ?? "")
+                    self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
+                    self.calories = self.extractCalories(from: geminiResult.nutrition_info)
+                    self.rawNutritionInfo = geminiResult.nutrition_info
+                }
                 
             case .failure(let error):
                 if (error as NSError).code == NSURLErrorTimedOut {
-                    self.errorMessage = "Analysis timed out. Try a clearer image or check your connection."
+                    self.errorMessage = "Analysis timed out. Try a clearer image."
                 } else {
                     self.errorMessage = error.localizedDescription
                 }
@@ -450,7 +526,7 @@ struct UploadMealView: View {
         
         let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
         if userId.isEmpty {
-            errorMessage = "Login session missing. Please log in again."
+            errorMessage = "Login session missing."
             return
         }
 
@@ -460,7 +536,6 @@ struct UploadMealView: View {
         let fullImageBase64 = fullImageData?.base64EncodedString() ?? ""
         let thumbnailBase64 = thumbnailData?.base64EncodedString() ?? ""
         
-        // Convert editable ingredients back to string format
         let visibleIngredientsString = visibleIngredients.map {
             "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
         }.joined(separator: "\n")
@@ -499,14 +574,16 @@ struct UploadMealView: View {
 
         session.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
-                if let error = error {
-                    self.errorMessage = "Failed to save meal: \(error.localizedDescription)"
+                if error != nil {
+                    self.errorMessage = "Failed to save meal"
                     return
                 }
                 
                 if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                     NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
-                    self.showToast = true
+                    withAnimation(.spring()) {
+                        self.showToast = true
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         self.dismiss()
                     }
@@ -552,70 +629,283 @@ struct UploadMealView: View {
     }
 }
 
-// Supporting Views and Models
-struct EditableIngredient: Identifiable {
-    let id: String
-    var name: String
-    var quantity: String
-    var unit: String
-}
+// MARK: - Supporting Views
 
-struct IngredientRow: View {
-    @Binding var ingredient: EditableIngredient
-    let isEditing: Bool
+struct MealTypeSelector: View {
+    @Binding var selectedType: String
+    let types = ["Breakfast", "Lunch", "Evening Snacks", "Dinner"]
+    let icons = ["sun.max.fill", "sun.min.fill", "cup.and.saucer.fill", "moon.fill"]
     
     var body: some View {
-        HStack(spacing: 8) {
-            if isEditing {
-                TextField("Name", text: $ingredient.name)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(maxWidth: .infinity)
-                
-                TextField("Qty", text: $ingredient.quantity)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(width: 60)
-                    .keyboardType(.decimalPad)
-                
-                TextField("Unit", text: $ingredient.unit)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(width: 80)
-            } else {
-                Text("• \(ingredient.name) — \(ingredient.quantity) \(ingredient.unit)")
-                    .foregroundColor(.white.opacity(0.9))
-                    .font(.subheadline)
+        Menu {
+            ForEach(Array(zip(types, icons)), id: \.0) { type, icon in
+                Button(action: { selectedType = type }) {
+                    Label(type, systemImage: icon)
+                }
             }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("MEAL TYPE")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                    .tracking(1)
+                
+                HStack {
+                    Image(systemName: icons[types.firstIndex(of: selectedType) ?? 1])
+                        .foregroundColor(.orange)
+                    Text(selectedType)
+                        .fontWeight(.medium)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundColor(.white)
+            }
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
         }
     }
 }
 
-struct DatePickerSheet: View {
+struct DateSelector: View {
     @Binding var selectedDate: Date
-    @Environment(\.dismiss) var dismiss
+    @Binding var showPicker: Bool
+    
+    var dateText: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: selectedDate)
+    }
     
     var body: some View {
-        NavigationView {
-            VStack {
-                DatePicker(
-                    "Select Date",
-                    selection: $selectedDate,
-                    in: ...Date(),
-                    displayedComponents: .date
-                )
-                .datePickerStyle(GraphicalDatePickerStyle())
-                .padding()
+        Button(action: { showPicker = true }) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DATE")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                    .tracking(1)
+                
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundColor(Color.blue)
+                    Text(dateText)
+                        .fontWeight(.medium)
+                    Spacer()
+                }
+                .foregroundColor(.white)
+            }
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
+        }
+    }
+}
+
+struct AnalyzingView: View {
+    @State private var dots = 0
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .stroke(Color.orange.opacity(0.2), lineWidth: 4)
+                    .frame(width: 80, height: 80)
+                
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(
+                        LinearGradient(
+                            gradient: Gradient(colors: [.orange, .orange.opacity(0.5)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(-90))
+                    .rotationEffect(.degrees(Double(dots) * 120))
+                    .animation(
+                        Animation.linear(duration: 1)
+                            .repeatForever(autoreverses: false),
+                        value: dots
+                    )
+                
+                Image(systemName: "sparkles")
+                    .font(.title)
+                    .foregroundColor(.orange)
+            }
+            
+            VStack(spacing: 8) {
+                Text("Analyzing your meal")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                Text("Using AI to identify ingredients and nutrition")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding()
+        .onAppear {
+            dots = 3
+        }
+    }
+}
+
+struct NutritionCard: View {
+    let nutritionLines: [String]
+    let calories: Int?
+    let onRecalculate: (() -> Void)?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.pie.fill")
+                        .foregroundColor(Color.purple)
+                    
+                    Text("Nutrition Facts")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
                 
                 Spacer()
+                
+                if let onRecalculate = onRecalculate {
+                    Button(action: onRecalculate) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Recalculate")
+                        }
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color.purple)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(Color.purple.opacity(0.2))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                    }
+                }
             }
-            .navigationTitle("Select Date")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+            
+            if let calories = calories {
+                HStack {
+                    Image(systemName: "flame.fill")
+                        .foregroundColor(.orange)
+                        .font(.title2)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(calories)")
+                            .font(.title2.bold())
+                            .foregroundColor(.white)
+                        Text("Calories")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.orange.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                        )
+                )
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(nutritionLines, id: \.self) { line in
+                    if !line.lowercased().contains("calories") {
+                        HStack {
+                            Circle()
+                                .fill(Color.purple.opacity(0.2))
+                                .frame(width: 8, height: 8)
+                            
+                            Text(line)
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Spacer()
+                        }
                     }
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
     }
 }
+
+
+// Image Picker
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    let sourceType: UIImagePickerController.SourceType
+    @Environment(\.dismiss) var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = sourceType
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ImagePicker
+        
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.image = image
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
+
