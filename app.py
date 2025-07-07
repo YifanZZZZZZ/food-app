@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 from pymongo import MongoClient
 from bson import ObjectId
-from model_pipeline import full_image_analysis, recalculate_nutrition_enhanced
+from model_pipeline import full_image_analysis
 import base64
 import traceback
 import time

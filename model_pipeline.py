@@ -398,8 +398,10 @@ def full_image_analysis(image_path, user_id):
         # Log results
         print(f"📊 Enhanced analysis completed in {time.time() - start_time:.2f} seconds")
         print(f"📍 Dish: {dish_name}")
-        print(f"📍 Visible ingredients: {len(visible.split('\\n'))} items")
-        print(f"📍 Hidden ingredients: {len(hidden.split('\\n'))} items")
+        visible_count = len(visible.split('\n'))
+        hidden_count = len(hidden.split('\n'))
+        print(f"📍 Visible ingredients: {visible_count} items")
+        print(f"📍 Hidden ingredients: {hidden_count} items")
         
         # Return in expected format
         return {
