@@ -2,17 +2,17 @@ from PIL import Image
 import google.generativeai as genai
 import base64
 import os
+import re
 import time
 from datetime import datetime
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from io import BytesIO
-import json
 
-# ---------- Load Environment ----------
+# Load environment variables
 load_dotenv()
 
-# ---------- Gemini API Setup ----------
+# Gemini API Setup
 GEN_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEN_API_KEY:
     raise ValueError("GEMINI_API_KEY is not set in environment variables.")
@@ -20,475 +20,276 @@ if not GEN_API_KEY:
 genai.configure(api_key=GEN_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
-# ---------- MongoDB Setup ----------
+# MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB", "food-app-swift")
 client = MongoClient(mongo_uri)
 db = client[mongo_db]
 meals_collection = db["meals"]
 
-# ---------- FULLY DYNAMIC Analysis Function ----------
-def analyze_image_with_gemini_dynamic(image_path):
-    """FULLY DYNAMIC Gemini analysis - ZERO hardcoded values"""
-    
-    # Enhanced prompt for maximum accuracy and specificity
-    dynamic_prompt = """
-You are a professional nutritionist with expertise in food identification and nutritional analysis. Analyze THIS SPECIFIC food image with extreme precision.
+def encode_image(image_path):
+    """Encode image to base64"""
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
 
-CRITICAL INSTRUCTIONS:
-1. Analyze ONLY what you see in THIS exact image
-2. Do NOT use any generic templates or default values
-3. Every measurement must be based on visual assessment of THIS specific portion
-4. If you cannot see something clearly, say "Unable to determine from image"
-5. Be as specific as possible about ingredients and quantities
-
-REQUIRED OUTPUT FORMAT:
-
-DISH NAME:
-[Provide the most accurate name for what you see in this image]
-
-VISIBLE INGREDIENTS:
-[For each ingredient you can clearly see in the image, provide:]
-[ingredient name] | [quantity estimate based on visual size] | [appropriate unit] | [description of what you see]
-
-HIDDEN INGREDIENTS:
-[For ingredients likely used but not visible, based on cooking method/appearance:]
-[ingredient name] | [quantity estimate] | [appropriate unit] | [reasoning based on visual cues]
-
-NUTRITION ANALYSIS:
-[Calculate based on ALL ingredients identified above:]
-Calories | [calculated amount] | kcal | [brief calculation explanation]
-Protein | [calculated amount] | g | [main protein sources identified]
-Fat | [calculated amount] | g | [fat sources identified]
-Carbohydrates | [calculated amount] | g | [carb sources identified]
-Fiber | [calculated amount] | g | [fiber sources identified]
-Sugar | [calculated amount] | g | [sugar sources identified]
-Sodium | [calculated amount] | mg | [sodium sources identified]
-
-ANALYSIS NOTES:
-- Base all calculations on the specific portion size visible in the image
-- Consider cooking methods visible (fried, baked, grilled, etc.)
-- Account for condiments, oils, and seasonings based on appearance
-- If multiple items are present, analyze each component separately then sum totals
-
-Remember: This analysis is for THIS SPECIFIC image only. Do not use generic portion sizes or standard recipes.
-"""
-    
-    max_retries = 3
-    retry_delay = 2
-    
-    for attempt in range(max_retries):
-        try:
-            # Load and optimize image
-            image = Image.open(image_path)
-            
-            # Ensure reasonable size for API
-            max_size = (1024, 1024)
-            image.thumbnail(max_size, Image.Resampling.LANCZOS)
-            
-            # Convert to RGB if needed
-            if image.mode not in ('RGB', 'L'):
-                image = image.convert('RGB')
-            
-            # Save optimized version
-            optimized_path = image_path.replace('.png', '_opt.jpg')
-            image.save(optimized_path, 'JPEG', quality=85)
-            
-            # Read and encode
-            with open(optimized_path, "rb") as img_file:
-                image_data = base64.b64encode(img_file.read()).decode('utf-8')
-            
-            print(f"🔍 Performing fully dynamic analysis (attempt {attempt + 1}/{max_retries})")
-            
-            # Configure for maximum accuracy
-            generation_config = genai.types.GenerationConfig(
-                temperature=0.1,  # Very low temperature for consistency
-                max_output_tokens=3000,  # Increased for detailed analysis
-                top_p=0.9,
-                top_k=40
-            )
-            
-            # Get Gemini's analysis
-            response = gemini_model.generate_content(
-                [dynamic_prompt, {"mime_type": "image/jpeg", "data": image_data}],
-                generation_config=generation_config,
-                request_options={"timeout": 90}
-            )
-            
-            # Clean up optimized image
-            try:
-                os.remove(optimized_path)
-            except:
-                pass
-            
-            if response and response.text:
-                print("✅ Dynamic analysis completed successfully")
-                return response.text
-            else:
-                raise Exception("Empty response from Gemini API")
-            
-        except Exception as e:
-            print(f"❌ Analysis attempt {attempt + 1} failed: {str(e)}")
-            
-            # Clean up on error
-            try:
-                if 'optimized_path' in locals():
-                    os.remove(optimized_path)
-            except:
-                pass
-            
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                # Final attempt with simpler analysis
-                return attempt_basic_analysis(image_path)
-    
-    return attempt_basic_analysis(image_path)
-
-def attempt_basic_analysis(image_path):
-    """Attempt basic analysis when main analysis fails - still dynamic"""
-    print("⚠️ Attempting basic dynamic analysis")
-    
+def analyze_image_with_gemini(image_path):
+    """Analyze image with Gemini - based on working web app code"""
     try:
-        # Try with a simpler prompt
-        simple_prompt = """
-Analyze this food image and provide:
-
-1. What food do you see?
-2. List visible ingredients with estimated quantities
-3. Estimate calories and basic nutrition
-
-Format your response as:
-DISH NAME: [name]
-VISIBLE INGREDIENTS: [ingredient] | [amount] | [unit] | [description]
-NUTRITION ANALYSIS: [nutrient] | [amount] | [unit] | [source]
-"""
-        
-        # Load image
+        # Optimize image before sending
         image = Image.open(image_path)
-        image.thumbnail((512, 512), Image.Resampling.LANCZOS)
         
+        # Resize if too large
+        max_size = (1024, 1024)
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
+        
+        # Convert to RGB if needed
         if image.mode not in ('RGB', 'L'):
             image = image.convert('RGB')
         
-        # Save and encode
-        temp_path = image_path.replace('.png', '_basic.jpg')
-        image.save(temp_path, 'JPEG', quality=70)
+        # Save optimized version
+        optimized_path = image_path.replace('.png', '_opt.jpg')
+        image.save(optimized_path, 'JPEG', quality=85)
         
-        with open(temp_path, "rb") as img_file:
-            image_data = base64.b64encode(img_file.read()).decode('utf-8')
+        # Encode optimized image
+        image_data = encode_image(optimized_path)
         
-        # Simple generation config
-        config = genai.types.GenerationConfig(
-            temperature=0.3,
-            max_output_tokens=1500,
-        )
-        
-        response = gemini_model.generate_content(
-            [simple_prompt, {"mime_type": "image/jpeg", "data": image_data}],
-            generation_config=config,
-            request_options={"timeout": 60}
-        )
-        
-        # Clean up
+        # Clean up optimized file
         try:
-            os.remove(temp_path)
+            os.remove(optimized_path)
         except:
             pass
         
+        # Proven prompt from working web app
+        prompt = (
+            "Describe the food dish in this image.\n"
+            "Return the dish name on the first line.\n"
+            "Then list each visible ingredient on a new line in the format: Ingredient | Quantity Number | Unit | Reasoning.\n"
+            "Quantity Number must be a numeric value only.\n"
+            "Avoid vague ranges or approximations like 'a few' or 'some'.\n"
+            "Be concise and avoid unnecessary descriptions.\n"
+            "Skip any background or utensils."
+        )
+        
+        print("🔍 Analyzing image with Gemini...")
+        
+        response = gemini_model.generate_content([
+            prompt,
+            {"mime_type": "image/jpeg", "data": image_data}
+        ])
+        
         if response and response.text:
+            print("✅ Gemini analysis successful")
             return response.text
         else:
-            raise Exception("Basic analysis also failed")
+            raise Exception("Empty response from Gemini")
             
     except Exception as e:
-        print(f"❌ Basic analysis failed: {str(e)}")
-        return generate_failure_response(str(e))
+        print(f"❌ Gemini analysis error: {str(e)}")
+        return f"Gemini error: {str(e)}"
 
-def generate_failure_response(error_details):
-    """Generate a failure response that indicates analysis couldn't be completed"""
-    newline_char = '\n'
-    return f"""Analysis failed: {error_details}
+def extract_ingredients_only(description):
+    """Extract only ingredient lines from description"""
+    lines = description.splitlines()
+    ingredients = []
+    for line in lines[1:]:  # Skip first line (dish name)
+        if '|' in line and len(line.split('|')) == 4:
+            ingredients.append(line.strip())
+    return "\n".join(ingredients)
 
-DISH NAME:
-Unable to analyze this image
-
-VISIBLE INGREDIENTS:
-Could not identify | 0 | g | Image analysis failed - {error_details}
-
-HIDDEN INGREDIENTS:
-Could not identify | 0 | g | Image analysis failed - {error_details}
-
-NUTRITION ANALYSIS:
-Calories | 0 | kcal | Analysis failed - unable to calculate{newline_char}Protein | 0 | g | Analysis failed - unable to calculate{newline_char}Fat | 0 | g | Analysis failed - unable to calculate{newline_char}Carbohydrates | 0 | g | Analysis failed - unable to calculate{newline_char}Fiber | 0 | g | Analysis failed - unable to calculate{newline_char}Sugar | 0 | g | Analysis failed - unable to calculate{newline_char}Sodium | 0 | mg | Analysis failed - unable to calculate
-
-ERROR DETAILS: {error_details}
-"""
-
-def parse_dynamic_response(response_text):
-    """Parse Gemini's dynamic response with better error handling"""
+def search_hidden_ingredients(dish_name, visible_ingredients):
+    """Find hidden ingredients based on dish name and visible ingredients"""
+    prompt = (
+        f"You are a recipe analyst.\n"
+        f"For the dish '{dish_name}', given the following visible ingredients:\n{visible_ingredients},\n"
+        "list only the likely hidden ingredients used in traditional or common recipes for this dish.\n"
+        "Format each hidden ingredient on a new line like this: Ingredient | Quantity Number | Unit | Reasoning.\n"
+        "Quantity Number must be a numeric value only.\n"
+        "Only include core items like oil, butter, sauces, or spices typically used. Avoid optional or garnish ingredients.\n"
+        "Do NOT use any vague descriptions. Be clear and formatted strictly."
+    )
+    
     try:
-        lines = response_text.strip().split('\n')
+        print("🔍 Searching for hidden ingredients...")
+        response = gemini_model.generate_content(prompt)
         
-        # Initialize sections
-        dish_name = ""
-        visible_ingredients = []
-        hidden_ingredients = []
-        nutrition_info = []
-        
-        current_section = None
-        
-        for line in lines:
-            line = line.strip()
+        if response and response.text:
+            print("✅ Hidden ingredients found")
+            return response.text
+        else:
+            return "No hidden ingredients identified"
             
-            if not line:
-                continue
-            
-            # Identify sections
-            if line.startswith('DISH NAME:'):
-                dish_name = line.replace('DISH NAME:', '').strip()
-                continue
-            elif 'VISIBLE INGREDIENTS' in line.upper():
-                current_section = 'visible'
-                continue
-            elif 'HIDDEN INGREDIENTS' in line.upper():
-                current_section = 'hidden'
-                continue
-            elif 'NUTRITION ANALYSIS' in line.upper() or 'NUTRITION INFO' in line.upper():
-                current_section = 'nutrition'
-                continue
-            
-            # Parse content lines
-            if '|' in line and current_section:
-                parts = [p.strip() for p in line.split('|')]
-                if len(parts) >= 3:
-                    if current_section == 'visible':
-                        visible_ingredients.append(line)
-                    elif current_section == 'hidden':
-                        hidden_ingredients.append(line)
-                    elif current_section == 'nutrition':
-                        nutrition_info.append(line)
-        
-        # If no dish name found, try to extract from first lines
-        if not dish_name:
-            for line in lines[:5]:
-                line = line.strip()
-                if line and not any(keyword in line.upper() for keyword in ['VISIBLE', 'HIDDEN', 'NUTRITION', 'INGREDIENTS', 'ANALYSIS']):
-                    dish_name = line
-                    break
-        
-        # Ensure we have a dish name
-        if not dish_name:
-            dish_name = "Unidentified food item"
-        
-        # Ensure minimum required nutrients
-        required_nutrients = ["Calories", "Protein", "Fat", "Carbohydrates", "Fiber", "Sugar", "Sodium"]
-        existing_nutrients = [line.split('|')[0].strip().lower() for line in nutrition_info if '|' in line]
-        
-        for nutrient in required_nutrients:
-            if nutrient.lower() not in existing_nutrients:
-                unit = "kcal" if nutrient == "Calories" else "mg" if nutrient == "Sodium" else "g"
-                nutrition_info.append(f"{nutrient} | 0 | {unit} | Not determined from image")
-        
-        # Ensure we have at least one visible ingredient
-        if not visible_ingredients:
-            visible_ingredients = ["Food item visible | 0 | g | Could not identify specific ingredients"]
-        
-        # Ensure we have hidden ingredients section
-        if not hidden_ingredients:
-            hidden_ingredients = ["No hidden ingredients identified | 0 | g | Could not determine cooking method"]
-        
-        return {
-            'dish_name': dish_name,
-            'visible_ingredients': '\n'.join(visible_ingredients),
-            'hidden_ingredients': '\n'.join(hidden_ingredients),
-            'nutrition_info': '\n'.join(nutrition_info)
-        }
-        
     except Exception as e:
-        print(f"❌ Response parsing error: {str(e)}")
-        return {
-            'dish_name': "Analysis parsing failed",
-            'visible_ingredients': f"Parsing error | 0 | g | {str(e)}",
-            'hidden_ingredients': f"Parsing error | 0 | g | {str(e)}",
-            'nutrition_info': "Calories | 0 | kcal | Parsing failed\nProtein | 0 | g | Parsing failed\nFat | 0 | g | Parsing failed\nCarbohydrates | 0 | g | Parsing failed\nFiber | 0 | g | Parsing failed\nSugar | 0 | g | Parsing failed\nSodium | 0 | mg | Parsing failed"
-        }
+        print(f"❌ Hidden ingredients error: {str(e)}")
+        return f"Hidden ingredients lookup error: {str(e)}"
 
-# ---------- Main Analysis Function ----------
+def estimate_nutrition_from_ingredients(dish_name, visible_ingredients):
+    """Estimate nutrition based on ingredients"""
+    prompt = (
+        f"You are a nutritionist.\n"
+        f"The user has provided the visible ingredients from a dish named '{dish_name}'.\n"
+        f"Ingredients:\n{visible_ingredients}\n\n"
+        "Your task is to output the nutritional breakdown per serving (based on image analysis).\n"
+        "Output each nutrient on a new line in this exact format:\n"
+        "Nutrient | Value | Unit | Reasoning\n"
+        "Value must be a numeric value only.\n"
+        "Example:\n"
+        "Calories | 720 | kcal | Estimated from rice and cheese.\n"
+        "Protein | 32 | g | Chicken and beans contribute majorly.\n\n"
+        "Avoid ranges (like 100–200) or vague statements.\n"
+        "Include at least these nutrients: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
+        "Be strict with the format."
+    )
+    
+    try:
+        print("🔍 Estimating nutrition...")
+        response = gemini_model.generate_content(prompt)
+        
+        if response and response.text:
+            print("✅ Nutrition estimation complete")
+            return response.text
+        else:
+            return "Nutrition estimation failed"
+            
+    except Exception as e:
+        print(f"❌ Nutrition estimation error: {str(e)}")
+        return f"Nutrition estimation error: {str(e)}"
+
+def extract_dish_name(description):
+    """Extract dish name from description"""
+    # Look for explicit dish name pattern
+    match = re.search(r'(?i)(?:dish name[:\-]?)\s*(.*)', description)
+    if match:
+        return match.group(1).strip().capitalize()
+    
+    # Otherwise use first line
+    first_line = description.strip().split('\n')[0]
+    return first_line.strip().capitalize()
+
+def parse_to_dict(text):
+    """Parse formatted text to dictionary"""
+    data_dict = {}
+    for line in text.splitlines():
+        parts = [p.strip() for p in line.split('|')]
+        if len(parts) == 4:
+            try:
+                # Try to convert to numeric value
+                numeric_value = float(parts[1]) if '.' in parts[1] else int(parts[1])
+                data_dict[parts[0]] = {
+                    "Quantity Number/Value": numeric_value,
+                    "Unit": parts[2],
+                    "Reasoning": parts[3]
+                }
+            except ValueError:
+                continue
+    return data_dict
+
 def full_image_analysis(image_path, user_id):
-    """Main function that performs FULLY DYNAMIC analysis with zero hardcoded values"""
+    """Main function for complete image analysis - based on working web app"""
     try:
         start_time = time.time()
         
-        print("🤖 Starting FULLY DYNAMIC Gemini analysis...")
-        print(f"📸 Analyzing image: {image_path}")
-        print(f"👤 User ID: {user_id}")
+        print(f"🤖 Starting image analysis for user: {user_id}")
+        print(f"📸 Image: {image_path}")
         
-        # Validate image exists
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"Image file not found: {image_path}")
+        # Step 1: Get basic description and dish name
+        gemini_description = analyze_image_with_gemini(image_path)
         
-        # Validate image is readable
-        try:
-            with Image.open(image_path) as img:
-                img.verify()
-        except Exception as e:
-            raise ValueError(f"Invalid image file: {str(e)}")
+        if "Gemini error" in gemini_description:
+            raise Exception(f"Gemini analysis failed: {gemini_description}")
         
-        # Get dynamic analysis from Gemini
-        gemini_response = analyze_image_with_gemini_dynamic(image_path)
+        # Step 2: Extract dish name
+        dish_name = extract_dish_name(gemini_description)
         
-        # Parse the response
-        parsed = parse_dynamic_response(gemini_response)
+        # Step 3: Extract clean ingredients list
+        cleaned_ingredients = extract_ingredients_only(gemini_description)
         
-        # Extract components
-        dish_name = parsed['dish_name']
-        visible = parsed['visible_ingredients']
-        hidden = parsed['hidden_ingredients']
-        nutrition = parsed['nutrition_info']
+        if not cleaned_ingredients:
+            raise Exception("No ingredients could be identified from the image")
         
-        # Log results
+        # Step 4: Find hidden ingredients
+        hidden_ingredients = search_hidden_ingredients(dish_name, cleaned_ingredients)
+        
+        # Step 5: Estimate nutrition
+        nutrition_info = estimate_nutrition_from_ingredients(dish_name, cleaned_ingredients)
+        
+        # Step 6: Parse data for potential storage
+        visible_dict = parse_to_dict(cleaned_ingredients)
+        hidden_dict = parse_to_dict(hidden_ingredients)
+        
         analysis_time = time.time() - start_time
-        newline_char = '\n'
-        print(f"📊 FULLY DYNAMIC analysis completed in {analysis_time:.2f} seconds")
-        print(f"📍 Dish: {dish_name}")
-        print(f"📍 Visible ingredients: {len(visible.split(newline_char))} items")
-        print(f"📍 Hidden ingredients: {len(hidden.split(newline_char))} items")
-        print(f"📍 Nutrition facts: {len(nutrition.split(newline_char))} values")
-        print(f"📍 ALL VALUES FROM IMAGE ANALYSIS - NO HARDCODED DATA")
         
-        # Return in expected format
+        print(f"✅ Analysis completed in {analysis_time:.2f} seconds")
+        print(f"📍 Dish: {dish_name}")
+        print(f"📍 Visible ingredients: {len(visible_dict)} items")
+        print(f"📍 Hidden ingredients: {len(hidden_dict)} items")
+        
+        # Return in format expected by Swift frontend
         return {
-            "dish_prediction": dish_name,
-            "image_description": visible,
-            "hidden_ingredients": hidden,
-            "nutrition_info": nutrition,
-            "analysis_time": analysis_time,
-            "user_id": user_id
+            'dish_prediction': dish_name,
+            'image_description': cleaned_ingredients,
+            'hidden_ingredients': hidden_ingredients,
+            'nutrition_info': nutrition_info,
+            'analysis_time': analysis_time,
+            'user_id': user_id
         }
         
     except Exception as e:
         print(f"❌ Full analysis error: {str(e)}")
-        import traceback
-        traceback.print_exc()
         
-        # Return error response that clearly indicates failure
-        newline_char = '\n'
+        # Return error response
+        error_msg = str(e)
         return {
-            "dish_prediction": f"Analysis failed: {str(e)}",
-            "image_description": f"Analysis error | 0 | g | {str(e)}",
-            "hidden_ingredients": f"Analysis error | 0 | g | {str(e)}",
-            "nutrition_info": f"Calories | 0 | kcal | Analysis failed: {str(e)}{newline_char}Protein | 0 | g | Analysis failed: {str(e)}{newline_char}Fat | 0 | g | Analysis failed: {str(e)}{newline_char}Carbohydrates | 0 | g | Analysis failed: {str(e)}{newline_char}Fiber | 0 | g | Analysis failed: {str(e)}{newline_char}Sugar | 0 | g | Analysis failed: {str(e)}{newline_char}Sodium | 0 | mg | Analysis failed: {str(e)}",
-            "analysis_time": 0,
-            "user_id": user_id,
-            "error": str(e)
+            'dish_prediction': f"Analysis failed: {error_msg}",
+            'image_description': f"Could not identify ingredients | 0 | g | {error_msg}",
+            'hidden_ingredients': f"Could not identify | 0 | g | {error_msg}",
+            'nutrition_info': f"Calories | 0 | kcal | Analysis failed\nProtein | 0 | g | Analysis failed\nFat | 0 | g | Analysis failed\nCarbohydrates | 0 | g | Analysis failed\nFiber | 0 | g | Analysis failed\nSugar | 0 | g | Analysis failed\nSodium | 0 | mg | Analysis failed",
+            'analysis_time': 0,
+            'user_id': user_id,
+            'error': error_msg
         }
 
-# ---------- Enhanced Nutrition Recalculation Function ----------
 def recalculate_nutrition_enhanced(ingredients_text):
-    """Dynamically recalculate nutrition based on actual ingredients - no hardcoded values"""
+    """Recalculate nutrition based on modified ingredients"""
     try:
-        print(f"🔄 Recalculating nutrition for: {ingredients_text[:100]}...")
+        print(f"🔄 Recalculating nutrition...")
         
-        prompt = f"""
-You are a certified nutritionist. Calculate the EXACT nutritional values for these SPECIFIC ingredients with their EXACT quantities:
-
-INGREDIENTS TO ANALYZE:
-{ingredients_text}
-
-INSTRUCTIONS:
-1. Use the EXACT quantities provided for each ingredient
-2. Calculate nutrition based on standard nutritional databases (USDA, etc.)
-3. Show your calculation process
-4. Sum all values for total nutrition
-
-REQUIRED OUTPUT FORMAT:
-NUTRITION ANALYSIS:
-Calories | [calculated total] | kcal | [brief calculation: ingredient1(cal) + ingredient2(cal) + etc.]
-Protein | [calculated total] | g | [main protein contributors]
-Fat | [calculated total] | g | [main fat contributors]
-Carbohydrates | [calculated total] | g | [main carb contributors]
-Fiber | [calculated total] | g | [fiber contributors]
-Sugar | [calculated total] | g | [sugar contributors - natural and added]
-Sodium | [calculated total] | mg | [sodium contributors]
-
-CALCULATION NOTES:
-- Base calculations on the specific quantities provided
-- Consider cooking methods if mentioned
-- Account for added fats/oils if cooking method suggests it
-- Round to nearest whole number for final values
-"""
-        
-        generation_config = genai.types.GenerationConfig(
-            temperature=0.2,  # Low temperature for consistent calculations
-            max_output_tokens=1500,
-            top_p=0.9,
-            top_k=40
+        prompt = (
+            f"You are a nutritionist.\n"
+            f"Calculate the exact nutritional values for these ingredients:\n\n{ingredients_text}\n\n"
+            "Output each nutrient on a new line in this exact format:\n"
+            "Nutrient | Value | Unit | Reasoning\n"
+            "Value must be a numeric value only.\n"
+            "Include at least: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
+            "Base calculations on the specific quantities provided.\n"
+            "Be strict with the format."
         )
         
-        response = gemini_model.generate_content(
-            prompt,
-            generation_config=generation_config,
-            request_options={"timeout": 45}
-        )
+        response = gemini_model.generate_content(prompt)
         
         if response and response.text:
-            response_text = response.text
-            
-            # Extract nutrition lines
-            if "NUTRITION ANALYSIS:" in response_text:
-                lines = response_text.split('\n')
-                nutrition_lines = []
-                capture = False
-                
-                for line in lines:
-                    line = line.strip()
-                    if "NUTRITION ANALYSIS:" in line:
-                        capture = True
-                        continue
-                    if capture and '|' in line:
-                        parts = [p.strip() for p in line.split('|')]
-                        if len(parts) >= 3:
-                            nutrition_lines.append(line)
-                
-                if nutrition_lines:
-                    newline_char = '\n'
-                    result = newline_char.join(nutrition_lines)
-                    print(f"✅ Nutrition recalculated successfully")
-                    return result
-            
-            # If structured format not found, return the whole response
-            print(f"⚠️ Using full response as nutrition data")
-            return response_text
-        
+            print("✅ Nutrition recalculated successfully")
+            return response.text
         else:
-            raise Exception("Empty response from Gemini API")
+            raise Exception("Empty response from Gemini")
             
     except Exception as e:
         print(f"❌ Nutrition recalculation error: {str(e)}")
         error_msg = str(e)
-        newline_char = '\n'
-        return f"""Calories | 0 | kcal | Recalculation failed: {error_msg}{newline_char}Protein | 0 | g | Recalculation failed: {error_msg}{newline_char}Fat | 0 | g | Recalculation failed: {error_msg}{newline_char}Carbohydrates | 0 | g | Recalculation failed: {error_msg}{newline_char}Fiber | 0 | g | Recalculation failed: {error_msg}{newline_char}Sugar | 0 | g | Recalculation failed: {error_msg}{newline_char}Sodium | 0 | mg | Recalculation failed: {error_msg}"""
+        return f"Calories | 0 | kcal | Recalculation failed: {error_msg}\nProtein | 0 | g | Recalculation failed: {error_msg}\nFat | 0 | g | Recalculation failed: {error_msg}\nCarbohydrates | 0 | g | Recalculation failed: {error_msg}\nFiber | 0 | g | Recalculation failed: {error_msg}\nSugar | 0 | g | Recalculation failed: {error_msg}\nSodium | 0 | mg | Recalculation failed: {error_msg}"
 
-# ---------- Image Validation Function ----------
 def validate_image_for_analysis(image_path):
-    """Validate that the image is suitable for food analysis"""
+    """Validate image before analysis"""
     try:
         with Image.open(image_path) as img:
-            # Check if image is too small
+            # Check minimum size
             if img.width < 100 or img.height < 100:
                 return False, "Image too small for analysis"
             
-            # Check if image is too large (will be resized anyway)
-            if img.width > 4000 or img.height > 4000:
-                return True, "Image will be resized for analysis"
-            
-            # Check image format
+            # Check format
             if img.format not in ['JPEG', 'PNG', 'WEBP']:
-                return False, f"Unsupported image format: {img.format}"
+                return False, f"Unsupported format: {img.format}"
             
-            return True, "Image is suitable for analysis"
+            return True, "Image is valid"
             
     except Exception as e:
-        return False, f"Image validation failed: {str(e)}"
+        return False, f"Invalid image: {str(e)}"

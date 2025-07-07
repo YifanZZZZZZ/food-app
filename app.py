@@ -50,7 +50,7 @@ def ping():
 
 @app.route("/")
 def home():
-    return {"message": "Food Analyzer Backend is Running", "version": "2.0", "features": "Dynamic Analysis Only"}, 200
+    return {"message": "Food Analyzer Backend is Running", "version": "2.1", "based_on": "Working Web App Backend"}, 200
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -65,8 +65,8 @@ def health():
             "status": "healthy",
             "mongodb": "connected",
             "gemini": "configured" if gemini_ok else "missing API key",
-            "analysis_mode": "fully_dynamic",
-            "hardcoded_values": "none",
+            "analysis_mode": "working_web_app_based",
+            "backend_version": "proven_stable",
             "timestamp": datetime.now().isoformat()
         }), 200
     except Exception as e:
@@ -187,7 +187,7 @@ def get_profile():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    """Fully dynamic analysis endpoint - NO hardcoded values"""
+    """Image analysis endpoint - based on working web app"""
     try:
         if "image" not in request.files:
             return jsonify({"error": "No image part in the request"}), 400
@@ -221,45 +221,55 @@ def analyze():
                 pass
             return jsonify({"error": f"Invalid image: {validation_msg}"}), 400
 
-        # Perform fully dynamic analysis with proper timeout handling
+        # Perform analysis with timeout handling
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
         import concurrent.futures
         
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(full_image_analysis, image_path, user_id)
             try:
-                # Give it 120 seconds to complete for thorough analysis
-                result = future.result(timeout=120)
+                # Give it 90 seconds to complete
+                result = future.result(timeout=90)
                 
                 # Check if analysis actually succeeded
                 if "error" in result:
                     print(f"⚠️ Analysis contained errors: {result.get('error', 'Unknown error')}")
+                    # Clean up and return error
+                    try:
+                        os.remove(image_path)
+                    except:
+                        pass
                     return jsonify({
                         "error": f"Analysis failed: {result.get('error', 'Unknown error')}",
-                        "details": "The image could not be analyzed. Please try with a clearer image."
+                        "suggestion": "Please try with a clearer image of food"
                     }), 500
                 
                 # Validate that we got meaningful results
                 if (result.get("dish_prediction", "").lower().startswith("analysis failed") or
+                    result.get("dish_prediction", "").lower().startswith("could not identify") or
                     result.get("dish_prediction", "").lower().startswith("unable to analyze")):
+                    try:
+                        os.remove(image_path)
+                    except:
+                        pass
                     return jsonify({
                         "error": "Unable to analyze this image",
-                        "details": "The image might be unclear or not contain recognizable food items."
+                        "suggestion": "Please ensure the image clearly shows food items"
                     }), 422
                 
             except concurrent.futures.TimeoutError:
-                print("⏱️ Analysis timeout - image might be too complex or API is slow")
+                print("⏱️ Analysis timeout")
                 try:
                     os.remove(image_path)
                 except:
                     pass
                 return jsonify({
                     "error": "Analysis timeout",
-                    "details": "The image analysis took too long. Please try with a simpler or clearer image."
+                    "suggestion": "Please try with a simpler or clearer image"
                 }), 408
         
         result["user_id"] = user_id
-        print(f"✅ Dynamic analysis completed for {filename}")
+        print(f"✅ Analysis completed for {filename}")
         print(f"📊 Dish: {result.get('dish_prediction', 'Unknown')}")
         print(f"⏱️ Analysis time: {result.get('analysis_time', 0):.2f}s")
         
@@ -542,8 +552,8 @@ def payload_too_large(error):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Starting FULLY DYNAMIC Food Analyzer Backend on port {port}")
-    print(f"✅ All analysis is performed by AI - NO hardcoded values")
-    print(f"🤖 Using Gemini AI for complete food analysis")
-    print(f"🔧 Enhanced analysis endpoint available at /analyze-enhanced")
+    print(f"🚀 Starting Food Analyzer Backend on port {port}")
+    print(f"✅ Based on proven working web app backend")
+    print(f"🤖 Using Gemini AI with tested prompts")
+    print(f"📱 Compatible with Swift frontend")
     app.run(host="0.0.0.0", port=port, threaded=True)
