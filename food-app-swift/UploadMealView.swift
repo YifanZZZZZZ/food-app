@@ -11,6 +11,7 @@ struct UploadMealView: View {
     @State private var hiddenIngredients: [EditableIngredient] = []
     @State private var nutritionLines: [String] = []
     @State private var rawNutritionInfo: String = ""
+    @State private var rawHiddenIngredients: String = ""
     @State private var calories: Int?
     @State private var showToast = false
     @State private var errorMessage = ""
@@ -19,6 +20,7 @@ struct UploadMealView: View {
     @State private var selectedDate = Date()
     @State private var selectedMealType = "Lunch"
     @State private var isEditingIngredients = false
+    @State private var isEditingHidden = false
     @State private var showDatePicker = false
     @State private var showCamera = false
     @State private var analysisStep = 0 // 0: select, 1: analyzing, 2: results
@@ -187,6 +189,7 @@ struct UploadMealView: View {
                                             selectedImage = nil
                                             detectedDish = ""
                                             visibleIngredients = []
+                                            hiddenIngredients = []
                                             nutritionLines = []
                                         }) {
                                             HStack(spacing: 4) {
@@ -248,44 +251,22 @@ struct UploadMealView: View {
                                     }
                                     .padding(.horizontal)
                                     
-                                    // Ingredients Section
+                                    // Visible Ingredients Section
                                     VStack(alignment: .leading, spacing: 16) {
-                                        HStack {
-                                            HStack(spacing: 8) {
-                                                Image(systemName: "leaf.fill")
-                                                    .foregroundColor(Color.green)
-                                                
-                                                Text("Ingredients")
-                                                    .font(.headline)
-                                                    .foregroundColor(.white)
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            Button(action: { isEditingIngredients.toggle() }) {
-                                                Text(isEditingIngredients ? "Done" : "Edit")
-                                                    .font(.caption)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundColor(.orange)
-                                                    .padding(.horizontal, 16)
-                                                    .padding(.vertical, 6)
-                                                    .background(
-                                                        Capsule()
-                                                            .fill(Color.orange.opacity(0.2))
-                                                            .overlay(
-                                                                Capsule()
-                                                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                                                            )
-                                                    )
-                                            }
-                                        }
+                                        SectionHeader(
+                                            title: "Visible Ingredients",
+                                            icon: "leaf.fill",
+                                            color: Color.green,
+                                            action: { isEditingIngredients.toggle() },
+                                            actionIcon: isEditingIngredients ? "checkmark" : "pencil"
+                                        )
                                         
                                         VStack(spacing: 12) {
                                             ForEach($visibleIngredients) { $ingredient in
                                                 if isEditingIngredients {
                                                     EditableIngredientRow(
                                                         ingredient: $ingredient,
-                                                        onDelete: { removeIngredient(id: ingredient.id) }
+                                                        onDelete: { removeVisibleIngredient(id: ingredient.id) }
                                                     )
                                                 } else {
                                                     IngredientDisplay(
@@ -295,7 +276,7 @@ struct UploadMealView: View {
                                             }
                                             
                                             if isEditingIngredients {
-                                                Button(action: addNewIngredient) {
+                                                Button(action: addNewVisibleIngredient) {
                                                     HStack {
                                                         Image(systemName: "plus.circle.fill")
                                                         Text("Add Ingredient")
@@ -308,11 +289,52 @@ struct UploadMealView: View {
                                     }
                                     .padding(.horizontal)
                                     
+                                    // Hidden Ingredients Section
+                                    if !hiddenIngredients.isEmpty {
+                                        VStack(alignment: .leading, spacing: 16) {
+                                            SectionHeader(
+                                                title: "Hidden Ingredients",
+                                                icon: "eye.slash.fill",
+                                                color: Color.pink,
+                                                action: { isEditingHidden.toggle() },
+                                                actionIcon: isEditingHidden ? "checkmark" : "pencil"
+                                            )
+                                            
+                                            VStack(spacing: 12) {
+                                                ForEach($hiddenIngredients) { $ingredient in
+                                                    if isEditingHidden {
+                                                        EditableIngredientRow(
+                                                            ingredient: $ingredient,
+                                                            onDelete: { removeHiddenIngredient(id: ingredient.id) }
+                                                        )
+                                                    } else {
+                                                        IngredientDisplay(
+                                                            text: "\(ingredient.name) — \(ingredient.quantity) \(ingredient.unit)",
+                                                            isHidden: true
+                                                        )
+                                                    }
+                                                }
+                                                
+                                                if isEditingHidden {
+                                                    Button(action: addNewHiddenIngredient) {
+                                                        HStack {
+                                                            Image(systemName: "plus.circle.fill")
+                                                            Text("Add Hidden Ingredient")
+                                                        }
+                                                        .font(.subheadline)
+                                                        .foregroundColor(Color.pink)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                    
                                     // Nutrition Info
                                     NutritionCard(
                                         nutritionLines: nutritionLines,
                                         calories: calories,
-                                        onRecalculate: isEditingIngredients ? recalculateNutrition : nil
+                                        onRecalculate: (isEditingIngredients || isEditingHidden) ? recalculateNutrition : nil
                                     )
                                     .padding(.horizontal)
                                     
@@ -378,11 +400,15 @@ struct UploadMealView: View {
     
     // Helper functions
     
-    func removeIngredient(id: String) {
+    func removeVisibleIngredient(id: String) {
         visibleIngredients.removeAll { $0.id == id }
     }
     
-    func addNewIngredient() {
+    func removeHiddenIngredient(id: String) {
+        hiddenIngredients.removeAll { $0.id == id }
+    }
+    
+    func addNewVisibleIngredient() {
         visibleIngredients.append(EditableIngredient(
             id: UUID().uuidString,
             name: "New Ingredient",
@@ -391,12 +417,23 @@ struct UploadMealView: View {
         ))
     }
     
+    func addNewHiddenIngredient() {
+        hiddenIngredients.append(EditableIngredient(
+            id: UUID().uuidString,
+            name: "New Hidden Ingredient",
+            quantity: "1",
+            unit: "tsp"
+        ))
+    }
+    
     func recalculateNutrition() {
         guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
         
         isLoading = true
         
-        let ingredientsList = visibleIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
+        // Combine visible and hidden ingredients for recalculation
+        let allIngredients = visibleIngredients + hiddenIngredients
+        let ingredientsList = allIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
         
         NetworkManager.shared.recalculateNutrition(
             ingredients: ingredientsList,
@@ -502,7 +539,18 @@ struct UploadMealView: View {
                     self.detectedDish = geminiResult.dish_prediction
                     self.editableDishName = geminiResult.dish_prediction
                     self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
-                    self.hiddenIngredients = self.parseIngredientsToEditable(from: geminiResult.hidden_ingredients ?? "")
+                    
+                    // Parse hidden ingredients
+                    if let hiddenText = geminiResult.hidden_ingredients, !hiddenText.isEmpty {
+                        self.hiddenIngredients = self.parseIngredientsToEditable(from: hiddenText)
+                        self.rawHiddenIngredients = hiddenText
+                        print("🔍 Hidden ingredients parsed: \(self.hiddenIngredients.count) items")
+                    } else {
+                        print("⚠️ No hidden ingredients received")
+                        self.hiddenIngredients = []
+                        self.rawHiddenIngredients = ""
+                    }
+                    
                     self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
                     self.calories = self.extractCalories(from: geminiResult.nutrition_info)
                     self.rawNutritionInfo = geminiResult.nutrition_info
@@ -755,7 +803,7 @@ struct AnalyzingView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                 
-                Text("Using AI to identify ingredients and nutrition")
+                Text("Identifying ingredients and hidden components")
                     .font(.caption)
                     .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
@@ -868,7 +916,6 @@ struct NutritionCard: View {
     }
 }
 
-
 // Image Picker
 struct ImagePicker: UIViewControllerRepresentable {
     @Binding var image: UIImage?
@@ -907,5 +954,3 @@ struct ImagePicker: UIViewControllerRepresentable {
         }
     }
 }
-
-
