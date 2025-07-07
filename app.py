@@ -271,7 +271,15 @@ def analyze():
         result["user_id"] = user_id
         print(f"✅ Analysis completed for {filename}")
         print(f"📊 Dish: {result.get('dish_prediction', 'Unknown')}")
+        print(f"📊 Hidden ingredients: {result.get('hidden_ingredients', 'None')[:100]}...")
         print(f"⏱️ Analysis time: {result.get('analysis_time', 0):.2f}s")
+        
+        # Debug: Check if hidden ingredients exist
+        if result.get('hidden_ingredients'):
+            print(f"🔍 Hidden ingredients length: {len(result['hidden_ingredients'])}")
+            print(f"🔍 Hidden ingredients preview: {result['hidden_ingredients'][:200]}...")
+        else:
+            print("⚠️ No hidden ingredients in result")
         
         # Clean up
         try:
