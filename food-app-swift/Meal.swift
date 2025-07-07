@@ -9,12 +9,12 @@ struct Meal: Identifiable, Codable {
     let user_id: String
     var dish_prediction: String
     var image_description: String
-    let hidden_ingredients: String?
-    let nutrition_info: String
+    var hidden_ingredients: String?  // Changed from 'let' to 'var'
+    var nutrition_info: String       // Changed from 'let' to 'var'
     let image_full: String?
     let image_thumb: String?
     let saved_at: String?
-    let meal_type: String?  // New field for meal type
+    let meal_type: String?
 }
 
 struct GeminiResult: Codable {
