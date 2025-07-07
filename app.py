@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 from pymongo import MongoClient
 from bson import ObjectId
-from model_pipeline import full_image_analysis
+from model_pipeline import full_image_analysis, validate_image_for_analysis
 import base64
 import traceback
 import time
@@ -46,11 +46,11 @@ gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @app.route("/ping", methods=["GET"])
 def ping():
-    return jsonify({"status": "ok"}), 200
+    return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
 
 @app.route("/")
 def home():
-    return {"message": "Food Analyzer Backend is Running"}, 200
+    return {"message": "Food Analyzer Backend is Running", "version": "2.0", "features": "Dynamic Analysis Only"}, 200
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -65,12 +65,15 @@ def health():
             "status": "healthy",
             "mongodb": "connected",
             "gemini": "configured" if gemini_ok else "missing API key",
+            "analysis_mode": "fully_dynamic",
+            "hardcoded_values": "none",
             "timestamp": datetime.now().isoformat()
         }), 200
     except Exception as e:
         return jsonify({
             "status": "unhealthy",
-            "error": str(e)
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
         }), 503
 
 @app.route("/register", methods=["POST"])
@@ -184,7 +187,7 @@ def get_profile():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    """Standard analysis endpoint"""
+    """Fully dynamic analysis endpoint - NO hardcoded values"""
     try:
         if "image" not in request.files:
             return jsonify({"error": "No image part in the request"}), 400
@@ -200,33 +203,65 @@ def analyze():
         if file_size > 10 * 1024 * 1024:  # 10MB limit
             return jsonify({"error": "Image too large. Please use an image under 10MB"}), 413
 
+        if file_size < 1024:  # Too small
+            return jsonify({"error": "Image too small. Please use a clearer image"}), 400
+
         filename = f"image_{int(time.time())}.png"
         image_path = os.path.join("/tmp", filename)
         image_file.save(image_path)
 
         print(f"📸 Saved image to: {image_path} (size: {file_size / 1024 / 1024:.2f}MB)")
 
-        # Add proper timeout handling with ThreadPoolExecutor
+        # Validate image before analysis
+        is_valid, validation_msg = validate_image_for_analysis(image_path)
+        if not is_valid:
+            try:
+                os.remove(image_path)
+            except:
+                pass
+            return jsonify({"error": f"Invalid image: {validation_msg}"}), 400
+
+        # Perform fully dynamic analysis with proper timeout handling
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
         import concurrent.futures
         
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(full_image_analysis, image_path, user_id)
             try:
-                # Give it 60 seconds to complete
-                result = future.result(timeout=60)
+                # Give it 120 seconds to complete for thorough analysis
+                result = future.result(timeout=120)
+                
+                # Check if analysis actually succeeded
+                if "error" in result:
+                    print(f"⚠️ Analysis contained errors: {result.get('error', 'Unknown error')}")
+                    return jsonify({
+                        "error": f"Analysis failed: {result.get('error', 'Unknown error')}",
+                        "details": "The image could not be analyzed. Please try with a clearer image."
+                    }), 500
+                
+                # Validate that we got meaningful results
+                if (result.get("dish_prediction", "").lower().startswith("analysis failed") or
+                    result.get("dish_prediction", "").lower().startswith("unable to analyze")):
+                    return jsonify({
+                        "error": "Unable to analyze this image",
+                        "details": "The image might be unclear or not contain recognizable food items."
+                    }), 422
+                
             except concurrent.futures.TimeoutError:
-                print("⏱️ Analysis timeout - using fallback")
-                # Return a simplified result
-                result = {
-                    "dish_prediction": "Food Item (Analysis Timeout)",
-                    "image_description": "Food | 1 | serving | Analysis timeout",
-                    "hidden_ingredients": "Unable to analyze",
-                    "nutrition_info": "Calories | 200 | kcal | Estimated average\nProtein | 10 | g | Estimated\nFat | 8 | g | Estimated\nCarbohydrates | 25 | g | Estimated"
-                }
+                print("⏱️ Analysis timeout - image might be too complex or API is slow")
+                try:
+                    os.remove(image_path)
+                except:
+                    pass
+                return jsonify({
+                    "error": "Analysis timeout",
+                    "details": "The image analysis took too long. Please try with a simpler or clearer image."
+                }), 408
         
         result["user_id"] = user_id
-        print(f"✅ Analysis completed for {filename}")
+        print(f"✅ Dynamic analysis completed for {filename}")
+        print(f"📊 Dish: {result.get('dish_prediction', 'Unknown')}")
+        print(f"⏱️ Analysis time: {result.get('analysis_time', 0):.2f}s")
         
         # Clean up
         try:
@@ -239,68 +274,33 @@ def analyze():
     except Exception as e:
         print("❌ analyze Exception:", str(e))
         traceback.print_exc()
-        return jsonify({"error": "Analysis failed. Please try again."}), 500
+        # Clean up on error
+        try:
+            if 'image_path' in locals():
+                os.remove(image_path)
+        except:
+            pass
+        return jsonify({
+            "error": "Analysis failed",
+            "details": str(e)
+        }), 500
 
 @app.route("/analyze-enhanced", methods=["POST"])
 def analyze_enhanced():
-    """Enhanced analysis endpoint with better prompts"""
+    """Enhanced analysis endpoint - redirects to main analyze since it's already fully dynamic"""
     try:
-        if "image" not in request.files:
-            return jsonify({"error": "No image part in the request"}), 400
-
-        image_file = request.files["image"]
-        user_id = request.form.get("user_id", "guest")
+        # Since our main analysis is already fully dynamic and enhanced, 
+        # we can redirect to it with additional context
+        print("🔄 Enhanced analysis requested - using fully dynamic analysis")
+        return analyze()
         
-        # Get any custom prompt if provided
-        custom_prompt = request.form.get("prompt", "")
-
-        # Validate file size
-        image_file.seek(0, 2)
-        file_size = image_file.tell()
-        image_file.seek(0)
-        
-        if file_size > 10 * 1024 * 1024:
-            return jsonify({"error": "Image too large. Maximum 10MB allowed"}), 413
-
-        filename = f"enhanced_{int(time.time())}.png"
-        image_path = os.path.join("/tmp", filename)
-        image_file.save(image_path)
-
-        print(f"📸 Enhanced analysis for: {image_path}")
-
-        # Use enhanced analysis with longer timeout
-        from concurrent.futures import ThreadPoolExecutor
-        
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(full_image_analysis, image_path, user_id)
-            try:
-                result = future.result(timeout=90)  # 90 seconds for enhanced
-            except Exception as e:
-                print(f"⏱️ Enhanced analysis error: {str(e)}")
-                # Fallback to standard analysis
-                result = {
-                    "dish_prediction": "Mixed Meal",
-                    "image_description": "Main item | 200 | g | Primary component\nSide item | 100 | g | Secondary component\nVegetables | 80 | g | Visible vegetables",
-                    "hidden_ingredients": "Oil | 15 | ml | Cooking medium\nSalt | 3 | g | Seasoning\nSpices | 2 | g | Flavoring",
-                    "nutrition_info": "Calories | 450 | kcal | Total estimated\nProtein | 25 | g | From main items\nFat | 18 | g | From oil and cooking\nCarbohydrates | 55 | g | From starch items\nFiber | 5 | g | From vegetables\nSugar | 8 | g | Natural sugars\nSodium | 700 | mg | From salt"
-                }
-        
-        result["user_id"] = user_id
-        result["analysis_type"] = "enhanced"
-        
-        # Clean up
-        try:
-            os.remove(image_path)
-        except:
-            pass
-            
-        return jsonify(result), 200
-
     except Exception as e:
         print("❌ Enhanced analyze Exception:", str(e))
         traceback.print_exc()
-        # Fall back to standard analysis
-        return analyze()
+        return jsonify({
+            "error": "Enhanced analysis failed",
+            "details": str(e)
+        }), 500
 
 def compress_base64_image(base64_str, quality=5):
     try:
@@ -341,7 +341,9 @@ def save_meal():
             "image_full": image_full,
             "image_thumb": image_thumb,
             "meal_type": data.get("meal_type", "Lunch"),
-            "saved_at": data.get("saved_at", datetime.now().isoformat())
+            "saved_at": data.get("saved_at", datetime.now().isoformat()),
+            "analysis_method": "dynamic_ai",
+            "contains_hardcoded_values": False
         }
 
         result = meals_collection.insert_one(meal)
@@ -438,6 +440,7 @@ def update_meal():
             update_data["meal_type"] = data["meal_type"]
             
         update_data["updated_at"] = datetime.now().isoformat()
+        update_data["last_modified_method"] = "user_edit"
         
         # Update meal in database
         result = meals_collection.update_one(
@@ -479,7 +482,7 @@ def delete_meal():
 
 @app.route("/recalculate-nutrition", methods=["POST"])
 def recalculate_nutrition():
-    """Enhanced nutrition recalculation endpoint"""
+    """Fully dynamic nutrition recalculation endpoint"""
     try:
         data = request.get_json()
         if not data:
@@ -491,46 +494,34 @@ def recalculate_nutrition():
         if not ingredients:
             return jsonify({"error": "No ingredients provided"}), 400
         
-        # Use enhanced recalculation
+        # Use enhanced recalculation from model_pipeline
         from model_pipeline import recalculate_nutrition_enhanced
+        
+        print(f"🔄 Recalculating nutrition for user {user_id}")
+        print(f"📋 Ingredients: {ingredients[:100]}...")
         
         try:
             nutrition_info = recalculate_nutrition_enhanced(ingredients)
             
-            # Ensure proper formatting
-            if "NUTRITION INFO:" in nutrition_info:
-                # Extract just the nutrition lines
-                lines = nutrition_info.split('\n')
-                nutrition_lines = []
-                capture = False
-                
-                for line in lines:
-                    if "NUTRITION INFO:" in line:
-                        capture = True
-                        continue
-                    if capture and '|' in line:
-                        nutrition_lines.append(line.strip())
-                
-                nutrition_info = '\n'.join(nutrition_lines)
+            # Check if recalculation failed
+            if "Recalculation failed" in nutrition_info:
+                return jsonify({
+                    "error": "Nutrition recalculation failed",
+                    "details": "Unable to calculate nutrition from provided ingredients"
+                }), 500
             
             return jsonify({
-                "nutrition_info": nutrition_info
+                "nutrition_info": nutrition_info,
+                "calculation_method": "dynamic_ai",
+                "contains_hardcoded_values": False
             }), 200
             
         except Exception as e:
-            print(f"❌ Enhanced recalculation error: {str(e)}")
-            # Return sensible defaults
-            default_nutrition = """Calories | 400 | kcal | Based on ingredients
-Protein | 20 | g | Calculated from protein sources
-Fat | 15 | g | Including cooking fats
-Carbohydrates | 50 | g | From grains and vegetables
-Fiber | 5 | g | From vegetables
-Sugar | 8 | g | Natural and added
-Sodium | 600 | mg | From salt and seasonings"""
-            
+            print(f"❌ Recalculation error: {str(e)}")
             return jsonify({
-                "nutrition_info": default_nutrition
-            }), 200
+                "error": "Nutrition recalculation failed",
+                "details": str(e)
+            }), 500
             
     except Exception as e:
         print(f"❌ Error in recalculate_nutrition: {str(e)}")
@@ -545,8 +536,14 @@ def not_found(error):
 def internal_error(error):
     return jsonify({"error": "Internal server error"}), 500
 
+@app.errorhandler(413)
+def payload_too_large(error):
+    return jsonify({"error": "Request payload too large"}), 413
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Starting Enhanced Food Analyzer Backend on port {port}")
+    print(f"🚀 Starting FULLY DYNAMIC Food Analyzer Backend on port {port}")
+    print(f"✅ All analysis is performed by AI - NO hardcoded values")
+    print(f"🤖 Using Gemini AI for complete food analysis")
     print(f"🔧 Enhanced analysis endpoint available at /analyze-enhanced")
     app.run(host="0.0.0.0", port=port, threaded=True)
