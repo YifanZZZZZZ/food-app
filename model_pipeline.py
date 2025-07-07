@@ -59,15 +59,37 @@ def analyze_image_with_gemini(image_path):
         except:
             pass
         
-        # Proven prompt from working web app
+        # Enhanced prompt for analyzing ALL dishes/items in the image
         prompt = (
-            "Describe the food dish in this image.\n"
-            "Return the dish name on the first line.\n"
-            "Then list each visible ingredient on a new line in the format: Ingredient | Quantity Number | Unit | Reasoning.\n"
-            "Quantity Number must be a numeric value only.\n"
-            "Avoid vague ranges or approximations like 'a few' or 'some'.\n"
-            "Be concise and avoid unnecessary descriptions.\n"
-            "Skip any background or utensils."
+            "You are a comprehensive food analyst. Look at this image and identify ALL food items present.\n\n"
+            "INSTRUCTIONS:\n"
+            "1. First line: List all dishes/food items you see (e.g., 'Chicken curry, basmati rice, naan bread, mixed salad')\n"
+            "2. Then list ALL visible ingredients from ALL dishes/items in the image\n\n"
+            "ANALYZE EVERYTHING:\n"
+            "- Main dishes (curries, stir-fries, pasta, etc.)\n"
+            "- Side dishes (rice, bread, salads, etc.)\n"
+            "- Beverages (if visible)\n"
+            "- Snacks or appetizers\n"
+            "- Desserts\n"
+            "- Condiments or sauces in separate containers\n\n"
+            "Format each VISIBLE ingredient from ALL items:\n"
+            "Ingredient | Quantity Number | Unit | Which dish/item it's from\n\n"
+            "VISIBLE means you can actually see it:\n"
+            "- Vegetables you can see in any dish\n"
+            "- Proteins visible in any dish\n"
+            "- Grains/starches you can see\n"
+            "- Visible garnishes, herbs, or toppings on any item\n"
+            "- Bread, naan, or other baked items\n"
+            "- Salad ingredients you can identify\n\n"
+            "DO NOT include cooking oils, salt, spices, or marinades (these are hidden).\n"
+            "Quantity Number must be numeric only.\n"
+            "Be thorough - don't miss any food items in the image.\n\n"
+            "Example for multiple dishes:\n"
+            "Chicken pieces | 150 | g | Main curry dish\n"
+            "Basmati rice | 200 | g | Side dish\n"
+            "Naan bread | 1 | piece | Bread item\n"
+            "Lettuce | 50 | g | Salad\n"
+            "Tomatoes | 30 | g | Salad"
         )
         
         print("🔍 Analyzing image with Gemini...")
@@ -96,30 +118,40 @@ def extract_ingredients_only(description):
             ingredients.append(line.strip())
     return "\n".join(ingredients)
 
-def search_hidden_ingredients(dish_name, visible_ingredients):
-    """Find hidden ingredients based on dish name and visible ingredients"""
+def search_hidden_ingredients(dish_names, visible_ingredients):
+    """Find hidden ingredients based on ALL dishes and visible ingredients"""
     prompt = (
-        f"You are a recipe analyst.\n"
-        f"For the dish '{dish_name}', given the following visible ingredients:\n{visible_ingredients}\n\n"
-        "List the likely hidden ingredients used in traditional recipes for this dish.\n"
-        "Focus on:\n"
-        "- Cooking oils (olive oil, vegetable oil, butter)\n"
-        "- Basic seasonings (salt, pepper, garlic powder)\n"
-        "- Common sauces or condiments\n"
-        "- Spices typical for this dish\n\n"
-        "Format each hidden ingredient on a new line like this:\n"
-        "Ingredient | Quantity Number | Unit | Reasoning\n\n"
-        "Example:\n"
-        "Olive oil | 2 | tbsp | Used for cooking/sautéing\n"
-        "Salt | 1 | tsp | Basic seasoning\n"
-        "Garlic powder | 0.5 | tsp | Common flavor enhancer\n\n"
-        "Quantity Number must be a numeric value only.\n"
-        "Only include ingredients that are very likely to be used.\n"
-        "Be specific and follow the format exactly."
+        f"You are a recipe analyst identifying hidden/non-visible ingredients.\n\n"
+        f"DISHES/ITEMS: {dish_names}\n"
+        f"VISIBLE INGREDIENTS (what can be seen in the image):\n{visible_ingredients}\n\n"
+        "Identify the HIDDEN ingredients likely used for ALL the dishes/items shown.\n"
+        "Consider what would be needed to prepare each dish/item.\n\n"
+        "HIDDEN INGREDIENTS are typically:\n"
+        "- Cooking oils/fats (olive oil, butter, vegetable oil, ghee)\n"
+        "- Basic seasonings (salt, black pepper, garlic powder)\n"
+        "- Cooking liquids (water, broth, wine used in cooking)\n"
+        "- Marinades or sauces that are absorbed/mixed in\n"
+        "- Binding agents (eggs in batter, flour for coating)\n"
+        "- Spices and herbs that are mixed in (not visible as garnish)\n"
+        "- Yeast or baking powder (for bread items)\n\n"
+        "For multiple dishes, consider what each would need:\n"
+        "- Curries: oil, spices, salt, onions (if not visible)\n"
+        "- Rice: water, salt, oil/butter\n"
+        "- Bread: flour, yeast, oil, salt (if not visible)\n"
+        "- Salads: dressing, oil, vinegar\n\n"
+        "Format each hidden ingredient:\n"
+        "Ingredient | Quantity Number | Unit | Used for which dish/purpose\n\n"
+        "Examples:\n"
+        "Cooking oil | 3 | tbsp | Used for curry and rice preparation\n"
+        "Salt | 2 | tsp | Seasoning for curry and rice\n"
+        "Cumin powder | 1 | tsp | Spice for curry dish\n"
+        "Olive oil | 1 | tbsp | Salad dressing\n\n"
+        "Quantity Number must be numeric only.\n"
+        "Include ingredients for ALL dishes mentioned."
     )
     
     try:
-        print("🔍 Searching for hidden ingredients...")
+        print("🔍 Searching for hidden ingredients for all dishes...")
         response = gemini_model.generate_content(prompt)
         
         if response and response.text:
@@ -134,43 +166,49 @@ def search_hidden_ingredients(dish_name, visible_ingredients):
             
             if formatted_lines:
                 result = '\n'.join(formatted_lines)
-                print(f"✅ Hidden ingredients found: {len(formatted_lines)} items")
+                print(f"✅ Hidden ingredients found: {len(formatted_lines)} items for all dishes")
                 return result
             else:
-                print("⚠️ No properly formatted hidden ingredients found")
-                return "Oil | 1 | tbsp | Likely used for cooking\nSalt | 1 | tsp | Common seasoning"
+                print("⚠️ No properly formatted hidden ingredients found, using defaults")
+                return "Cooking oil | 2 | tbsp | Used for cooking dishes\nSalt | 1 | tsp | Basic seasoning for dishes\nWater | 250 | ml | Used for cooking rice/grains"
         else:
             print("⚠️ Empty response for hidden ingredients")
-            return "Oil | 1 | tbsp | Likely used for cooking\nSalt | 1 | tsp | Common seasoning"
+            return "Cooking oil | 2 | tbsp | Used for cooking dishes\nSalt | 1 | tsp | Basic seasoning for dishes"
             
     except Exception as e:
         print(f"❌ Hidden ingredients error: {str(e)}")
-        return "Oil | 1 | tbsp | Likely used for cooking\nSalt | 1 | tsp | Common seasoning"
+        return "Cooking oil | 2 | tbsp | Used for cooking dishes\nSalt | 1 | tsp | Basic seasoning for dishes"
 
-def estimate_nutrition_from_ingredients(dish_name, visible_ingredients):
-    """Estimate nutrition based on ingredients"""
+def estimate_nutrition_from_ingredients(dish_names, visible_ingredients, hidden_ingredients):
+    """Estimate nutrition based on ALL dishes and ingredients"""
+    
+    # Combine both visible and hidden ingredients for nutrition calculation
+    all_ingredients = f"DISHES/ITEMS: {dish_names}\n\nVISIBLE INGREDIENTS:\n{visible_ingredients}\n\nHIDDEN INGREDIENTS:\n{hidden_ingredients}"
+    
     prompt = (
-        f"You are a nutritionist.\n"
-        f"The user has provided the visible ingredients from a dish named '{dish_name}'.\n"
-        f"Ingredients:\n{visible_ingredients}\n\n"
-        "Your task is to output the nutritional breakdown per serving (based on image analysis).\n"
+        f"You are a nutritionist calculating nutrition for ALL food items shown.\n\n"
+        f"COMPLETE MEAL ANALYSIS:\n{all_ingredients}\n\n"
+        "Calculate the TOTAL nutritional breakdown for the ENTIRE MEAL (all dishes combined).\n"
+        "This represents what one person would consume if they ate all the food shown.\n\n"
         "Output each nutrient on a new line in this exact format:\n"
         "Nutrient | Value | Unit | Reasoning\n"
-        "Value must be a numeric value only.\n"
-        "Example:\n"
-        "Calories | 720 | kcal | Estimated from rice and cheese.\n"
-        "Protein | 32 | g | Chicken and beans contribute majorly.\n\n"
-        "Avoid ranges (like 100–200) or vague statements.\n"
-        "Include at least these nutrients: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
-        "Be strict with the format."
+        "Value must be a numeric value only.\n\n"
+        "Examples:\n"
+        "Calories | 850 | kcal | Curry (400) + rice (300) + bread (150)\n"
+        "Protein | 45 | g | From chicken in curry and grains\n"
+        "Fat | 25 | g | From cooking oil, meat, and dairy\n\n"
+        "Include these nutrients: Calories, Protein, Fat, Carbohydrates, Fiber, Sugar, Sodium.\n"
+        "Consider ALL items shown - main dishes, sides, beverages, etc.\n"
+        "Account for both visible and hidden ingredients in your calculations.\n"
+        "Provide realistic portion sizes for a typical meal."
     )
     
     try:
-        print("🔍 Estimating nutrition...")
+        print("🔍 Calculating nutrition for complete meal...")
         response = gemini_model.generate_content(prompt)
         
         if response and response.text:
-            print("✅ Nutrition estimation complete")
+            print("✅ Complete meal nutrition calculation done")
             return response.text
         else:
             return "Nutrition estimation failed"
@@ -180,15 +218,25 @@ def estimate_nutrition_from_ingredients(dish_name, visible_ingredients):
         return f"Nutrition estimation error: {str(e)}"
 
 def extract_dish_name(description):
-    """Extract dish name from description"""
-    # Look for explicit dish name pattern
-    match = re.search(r'(?i)(?:dish name[:\-]?)\s*(.*)', description)
-    if match:
-        return match.group(1).strip().capitalize()
-    
-    # Otherwise use first line
+    """Extract dish name(s) from description - handles multiple dishes"""
+    # Get first line which should contain all dishes
     first_line = description.strip().split('\n')[0]
-    return first_line.strip().capitalize()
+    
+    # Clean up the first line
+    dish_names = first_line.strip()
+    
+    # Remove any prefixes like "Dishes:" or "Food items:"
+    prefixes_to_remove = ["dishes:", "food items:", "items:", "dish:", "food:"]
+    for prefix in prefixes_to_remove:
+        if dish_names.lower().startswith(prefix):
+            dish_names = dish_names[len(prefix):].strip()
+    
+    # If it's a single dish, capitalize properly
+    if ',' not in dish_names and ' and ' not in dish_names:
+        return dish_names.capitalize()
+    
+    # For multiple dishes, return as is (already formatted)
+    return dish_names
 
 def parse_to_dict(text):
     """Parse formatted text to dictionary"""
@@ -222,8 +270,8 @@ def full_image_analysis(image_path, user_id):
         if "Gemini error" in gemini_description:
             raise Exception(f"Gemini analysis failed: {gemini_description}")
         
-        # Step 2: Extract dish name
-        dish_name = extract_dish_name(gemini_description)
+        # Step 2: Extract dish names (could be multiple)
+        dish_names = extract_dish_name(gemini_description)
         
         # Step 3: Extract clean ingredients list
         cleaned_ingredients = extract_ingredients_only(gemini_description)
@@ -231,15 +279,11 @@ def full_image_analysis(image_path, user_id):
         if not cleaned_ingredients:
             raise Exception("No ingredients could be identified from the image")
         
-        # Step 4: Find hidden ingredients
-        hidden_ingredients = search_hidden_ingredients(dish_name, cleaned_ingredients)
+        # Step 4: Find hidden ingredients for all dishes
+        hidden_ingredients = search_hidden_ingredients(dish_names, cleaned_ingredients)
         
-        # Ensure hidden ingredients are in the right format
-        if not hidden_ingredients or "error" in hidden_ingredients.lower():
-            hidden_ingredients = "Oil | 1 | tbsp | Likely used for cooking\nSalt | 1 | tsp | Common seasoning\nPepper | 0.5 | tsp | Common seasoning"
-        
-        # Step 5: Estimate nutrition
-        nutrition_info = estimate_nutrition_from_ingredients(dish_name, cleaned_ingredients)
+        # Step 5: Estimate nutrition from ALL ingredients (visible + hidden) for all dishes
+        nutrition_info = estimate_nutrition_from_ingredients(dish_names, cleaned_ingredients, hidden_ingredients)
         
         # Step 6: Parse data for potential storage
         visible_dict = parse_to_dict(cleaned_ingredients)
@@ -248,14 +292,14 @@ def full_image_analysis(image_path, user_id):
         analysis_time = time.time() - start_time
         
         print(f"✅ Analysis completed in {analysis_time:.2f} seconds")
-        print(f"📍 Dish: {dish_name}")
+        print(f"📍 Dishes/Items: {dish_names}")
         print(f"📍 Visible ingredients: {len(visible_dict)} items")
         print(f"📍 Hidden ingredients: {len(hidden_dict)} items")
         print(f"📍 Hidden ingredients text: {hidden_ingredients[:100]}...")
         
         # Return in format expected by Swift frontend
         return {
-            'dish_prediction': dish_name,
+            'dish_prediction': dish_names,
             'image_description': cleaned_ingredients,
             'hidden_ingredients': hidden_ingredients,
             'nutrition_info': nutrition_info,
