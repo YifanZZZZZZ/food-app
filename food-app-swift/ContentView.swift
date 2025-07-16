@@ -8,12 +8,30 @@
 import SwiftUI
 
 struct ContentView: View {
+    @ObservedObject var session = SessionManager.shared
+    
     var body: some View {
-        OnboardingView()
+        NavigationStack {
+            Group {
+                if session.isLoggedIn {
+                    DashboardView()
+                        .navigationBarHidden(true)
+                } else {
+                    OnboardingView()
+                        .navigationBarHidden(true)
+                }
+            }
+            .navigationDestination(isPresented: $session.shouldNavigateToLogin) {
+                OnboardingView()
+                    .navigationBarBackButtonHidden(true)
+                    .onAppear {
+                        session.resetNavigationFlag()
+                    }
+            }
+        }
     }
 }
 
 #Preview {
     ContentView()
 }
-

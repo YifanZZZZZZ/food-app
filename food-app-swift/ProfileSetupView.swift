@@ -2,8 +2,12 @@ import SwiftUI
 
 struct ProfileSetupView: View {
     @ObservedObject var session = SessionManager.shared
+    @ObservedObject var profileManager = ProfileManager.shared
     @Environment(\.dismiss) var dismiss
 
+    // Existing profile for editing (nil for new setup)
+    let existingProfile: UserProfile?
+    
     @State private var age: Double = 25
     @State private var gender: String = "Select"
     @State private var activityLevel = "2"
@@ -17,6 +21,9 @@ struct ProfileSetupView: View {
     @State private var errorMessage = ""
     @State private var showLoadingOverlay = false
     @State private var loadingMessage = "Setting up your profile..."
+    
+    // Is this an edit mode?
+    var isEditMode: Bool { existingProfile != nil }
 
     let genderOptions = ["Male", "Female", "Other"]
     let activityOptions = [
@@ -25,6 +32,10 @@ struct ProfileSetupView: View {
         ("3", "Active", "Exercise 3-5 days/week"),
         ("4", "Very Active", "Exercise 6-7 days/week")
     ]
+    
+    init(existingProfile: UserProfile? = nil) {
+        self.existingProfile = existingProfile
+    }
 
     var body: some View {
         NavigationStack {
@@ -45,22 +56,24 @@ struct ProfileSetupView: View {
                     VStack(spacing: 24) {
                         // Header
                         VStack(spacing: 16) {
-                            // Progress Indicator
-                            HStack(spacing: 8) {
-                                ForEach(1...3, id: \.self) { step in
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(step <= 2 ? Color.orange : Color.white.opacity(0.2))
-                                        .frame(height: 6)
+                            // Progress Indicator (only for new setup)
+                            if !isEditMode {
+                                HStack(spacing: 8) {
+                                    ForEach(1...3, id: \.self) { step in
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(step <= 2 ? Color.orange : Color.white.opacity(0.2))
+                                            .frame(height: 6)
+                                    }
                                 }
+                                .padding(.horizontal, 80)
                             }
-                            .padding(.horizontal, 80)
                             
                             VStack(spacing: 8) {
-                                Text("Complete Your Profile")
+                                Text(isEditMode ? "Edit Your Profile" : "Complete Your Profile")
                                     .font(.system(size: 28, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
                                 
-                                Text("Help us personalize your nutrition journey")
+                                Text(isEditMode ? "Update your nutrition preferences" : "Help us personalize your nutrition journey")
                                     .font(.subheadline)
                                     .foregroundColor(.gray)
                                     .multilineTextAlignment(.center)
@@ -219,9 +232,9 @@ struct ProfileSetupView: View {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 } else {
-                                    Text("Complete Setup")
+                                    Text(isEditMode ? "Save Changes" : "Complete Setup")
                                         .fontWeight(.semibold)
-                                    Image(systemName: "arrow.right")
+                                    Image(systemName: isEditMode ? "checkmark" : "arrow.right")
                                 }
                             }
                             .foregroundColor(.white)
@@ -244,6 +257,20 @@ struct ProfileSetupView: View {
                 }
             }
             .preferredColorScheme(.dark)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if isEditMode {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .foregroundColor(.gray)
+                    }
+                }
+            }
+            .onAppear {
+                loadExistingProfile()
+            }
             .navigationDestination(isPresented: $navigateToDashboard) {
                 DashboardView()
                     .navigationBarBackButtonHidden(true)
@@ -269,7 +296,7 @@ struct ProfileSetupView: View {
                                 .font(.headline)
                                 .foregroundColor(.white)
                             
-                            Text("This may take a moment...")
+                            Text("Syncing with server...")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }
@@ -288,6 +315,23 @@ struct ProfileSetupView: View {
             )
         }
     }
+    
+    // MARK: - Functions
+    
+    func loadExistingProfile() {
+        guard let profile = existingProfile else { return }
+        
+        // Load existing values
+        age = Double(profile.age)
+        gender = profile.gender
+        activityLevel = profile.activity_level
+        calorieTarget = Double(profile.calorie_target)
+        isVegetarian = profile.is_vegetarian ?? false
+        isKeto = profile.is_keto ?? false
+        isGlutenFree = profile.is_gluten_free ?? false
+        
+        print("📝 Loaded existing profile for editing")
+    }
 
     func saveProfile() {
         guard gender != "Select" else {
@@ -298,110 +342,50 @@ struct ProfileSetupView: View {
         
         isSaving = true
         showLoadingOverlay = true
-        loadingMessage = "Setting up your profile..."
+        loadingMessage = isEditMode ? "Updating your profile..." : "Setting up your profile..."
         
-        // Save to UserDefaults for dashboard
-        UserDefaults.standard.set(Int(calorieTarget), forKey: "calorie_target")
+        let userId = session.userID.isEmpty ?
+            UserDefaults.standard.string(forKey: "user_id") ?? "" : session.userID
         
-        // Add a timeout timer
-        let timeoutTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { _ in
-            if self.showLoadingOverlay {
-                self.showLoadingOverlay = false
-                self.isSaving = false
-                self.errorMessage = "Request timed out. The server might be starting up. Please try again in a moment."
-                self.showError = true
-            }
-        }
+        // Create UserProfile object
+        let profile = UserProfile(
+            _id: existingProfile?._id,
+            user_id: userId,
+            age: Int(age),
+            gender: gender,
+            activity_level: activityLevel,
+            calorie_target: Int(calorieTarget),
+            is_vegetarian: isVegetarian,
+            is_keto: isKeto,
+            is_gluten_free: isGlutenFree,
+            updated_at: nil
+        )
         
-        let payload: [String: Any] = [
-            "user_id": session.userID,
-            "age": Int(age),
-            "gender": gender,
-            "activity_level": activityLevel,
-            "calorie_target": Int(calorieTarget),
-            "is_vegetarian": isVegetarian,
-            "is_keto": isKeto,
-            "is_gluten_free": isGlutenFree
-        ]
-
-        guard let url = URL(string: "https://food-app-swift.onrender.com/save-profile"),
-              let json = try? JSONSerialization.data(withJSONObject: payload) else {
-            isSaving = false
-            showLoadingOverlay = false
-            errorMessage = "Failed to prepare data"
-            showError = true
-            timeoutTimer.invalidate()
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = json
-        request.timeoutInterval = 30
-
-        // First, ping the server to wake it up if needed
-        if let pingURL = URL(string: "https://food-app-swift.onrender.com/ping") {
-            var pingRequest = URLRequest(url: pingURL)
-            pingRequest.timeoutInterval = 5
+        // Save using ProfileManager
+        profileManager.saveProfile(profile) { [self] success, error in
+            self.isSaving = false
+            self.showLoadingOverlay = false
             
-            loadingMessage = "Waking up server..."
-            
-            URLSession.shared.dataTask(with: pingRequest) { _, _, _ in
-                // After ping, proceed with profile save
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.loadingMessage = "Saving your profile..."
-                    self.performProfileSave(request: request, timeoutTimer: timeoutTimer)
-                }
-            }.resume()
-        } else {
-            performProfileSave(request: request, timeoutTimer: timeoutTimer)
-        }
-    }
-    
-    private func performProfileSave(request: URLRequest, timeoutTimer: Timer) {
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                timeoutTimer.invalidate()
-                self.isSaving = false
-                self.showLoadingOverlay = false
+            if success {
+                print("✅ Profile saved successfully to MongoDB")
                 
-                if error != nil {
-                    self.errorMessage = "Network error: \(error?.localizedDescription ?? "Unknown error")"
-                    self.showError = true
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse {
-                    print("Profile save response code: \(httpResponse.statusCode)")
-                    
-                    if httpResponse.statusCode == 200 {
-                        // Success - navigate to dashboard
-                        self.navigateToDashboard = true
-                    } else if httpResponse.statusCode == 500 {
-                        self.errorMessage = "Server error. Please try again."
-                        self.showError = true
-                    } else {
-                        // Try to parse error message from response
-                        if let data = data,
-                           let errorDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let message = errorDict["error"] as? String {
-                            self.errorMessage = message
-                        } else {
-                            self.errorMessage = "Failed to save profile. Please try again."
-                        }
-                        self.showError = true
-                    }
+                if self.isEditMode {
+                    // Just dismiss for edit mode
+                    self.dismiss()
                 } else {
-                    self.errorMessage = "No response from server. Please try again."
-                    self.showError = true
+                    // Navigate to dashboard for new setup
+                    self.navigateToDashboard = true
                 }
+            } else {
+                self.errorMessage = error ?? "Failed to save profile"
+                self.showError = true
+                print("❌ Profile save failed: \(self.errorMessage)")
             }
-        }.resume()
+        }
     }
 }
 
-// Supporting Views
+// MARK: - Supporting Views (GenderButton, ActivityLevelCard, DietaryToggle remain the same)
 
 struct GenderButton: View {
     let title: String
