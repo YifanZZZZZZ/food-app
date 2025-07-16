@@ -544,6 +544,358 @@ def recalculate_nutrition():
     except Exception as e:
         print(f"❌ Error in recalculate_nutrition: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
+    
+# Add these endpoints to your app.py file
+
+@app.route("/add-exercise", methods=["POST"])
+def add_exercise():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        required = ["user_id", "exercise_type", "duration"]
+        missing = [k for k in required if k not in data]
+        if missing:
+            return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+        
+        exercise = {
+            "user_id": data["user_id"],
+            "exercise_type": data["exercise_type"],
+            "duration": data["duration"],
+            "intensity": data.get("intensity", "Moderate"),
+            "calories_burned": data.get("calories_burned", 0),
+            "notes": data.get("notes", ""),
+            "recorded_at": data.get("recorded_at", datetime.now().isoformat())
+        }
+        
+        # Create exercise collection if it doesn't exist
+        exercises_collection = db["exercise"]
+        exercises_collection.create_index([("user_id", 1), ("recorded_at", -1)])
+        
+        result = exercises_collection.insert_one(exercise)
+        return jsonify({
+            "message": "Exercise added successfully",
+            "exercise_id": str(result.inserted_id)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in add_exercise: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/user-exercise", methods=["GET"])
+def get_user_exercise():
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id parameter"}), 400
+        
+        exercises_collection = db["exercise"]
+        exercises = list(exercises_collection.find(
+            {"user_id": user_id}
+        ).sort("recorded_at", -1))
+        
+        for exercise in exercises:
+            exercise["_id"] = str(exercise["_id"])
+        
+        return jsonify(exercises), 200
+        
+    except Exception as e:
+        print(f"❌ Error in get_user_exercise: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/add-water", methods=["POST"])
+def add_water():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        required = ["user_id", "amount"]
+        missing = [k for k in required if k not in data]
+        if missing:
+            return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+        
+        water_entry = {
+            "user_id": data["user_id"],
+            "amount": data["amount"],
+            "recorded_at": data.get("recorded_at", datetime.now().isoformat())
+        }
+        
+        # Create water collection if it doesn't exist
+        water_collection = db["water"]
+        water_collection.create_index([("user_id", 1), ("recorded_at", -1)])
+        
+        result = water_collection.insert_one(water_entry)
+        return jsonify({
+            "message": "Water intake added successfully",
+            "water_id": str(result.inserted_id)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in add_water: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/user-water", methods=["GET"])
+def get_user_water():
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id parameter"}), 400
+        
+        water_collection = db["water"]
+        water_entries = list(water_collection.find(
+            {"user_id": user_id}
+        ).sort("recorded_at", -1))
+        
+        for entry in water_entries:
+            entry["_id"] = str(entry["_id"])
+        
+        return jsonify(water_entries), 200
+        
+    except Exception as e:
+        print(f"❌ Error in get_user_water: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/add-weight", methods=["POST"])
+def add_weight():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+        
+        required = ["user_id", "weight"]
+        missing = [k for k in required if k not in data]
+        if missing:
+            return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+        
+        weight_entry = {
+            "user_id": data["user_id"],
+            "weight": data["weight"],
+            "recorded_at": data.get("recorded_at", datetime.now().isoformat())
+        }
+        
+        # Create weight collection if it doesn't exist
+        weight_collection = db["weight"]
+        weight_collection.create_index([("user_id", 1), ("recorded_at", -1)])
+        
+        result = weight_collection.insert_one(weight_entry)
+        return jsonify({
+            "message": "Weight entry added successfully",
+            "weight_id": str(result.inserted_id)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in add_weight: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/user-weight", methods=["GET"])
+def get_user_weight():
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id parameter"}), 400
+        
+        weight_collection = db["weight"]
+        weight_entries = list(weight_collection.find(
+            {"user_id": user_id}
+        ).sort("recorded_at", -1))
+        
+        for entry in weight_entries:
+            entry["_id"] = str(entry["_id"])
+        
+        return jsonify(weight_entries), 200
+        
+    except Exception as e:
+        print(f"❌ Error in get_user_weight: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/dashboard-stats", methods=["GET"])
+def get_dashboard_stats():
+    """Get comprehensive dashboard statistics"""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id parameter"}), 400
+        
+        # Get current date info
+        now = datetime.now()
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
+        
+        # Initialize collections
+        meals_collection = db["meals"]
+        water_collection = db["water"]
+        exercise_collection = db["exercise"]
+        weight_collection = db["weight"]
+        
+        # Get meal stats
+        meals = list(meals_collection.find({"user_id": user_id}))
+        today_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')).date() == today.date()]
+        week_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')) >= week_start]
+        month_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')) >= month_start]
+        
+        # Get water stats
+        water_entries = list(water_collection.find({"user_id": user_id}))
+        today_water = sum(w["amount"] for w in water_entries if datetime.fromisoformat(w.get("recorded_at", "").replace('Z', '+00:00')).date() == today.date())
+        week_water = sum(w["amount"] for w in water_entries if datetime.fromisoformat(w.get("recorded_at", "").replace('Z', '+00:00')) >= week_start)
+        
+        # Get exercise stats
+        exercise_entries = list(exercise_collection.find({"user_id": user_id}))
+        today_exercise = sum(e["duration"] for e in exercise_entries if datetime.fromisoformat(e.get("recorded_at", "").replace('Z', '+00:00')).date() == today.date())
+        week_exercise = sum(e["duration"] for e in exercise_entries if datetime.fromisoformat(e.get("recorded_at", "").replace('Z', '+00:00')) >= week_start)
+        
+        # Get weight stats
+        weight_entries = list(weight_collection.find({"user_id": user_id}).sort("recorded_at", -1))
+        current_weight = weight_entries[0]["weight"] if weight_entries else 0
+        
+        # Calculate streak (simplified)
+        streak = 0
+        check_date = today
+        for i in range(30):  # Check last 30 days
+            day_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')).date() == check_date.date()]
+            if day_meals:
+                streak += 1
+                check_date -= timedelta(days=1)
+            else:
+                break
+        
+        return jsonify({
+            "today": {
+                "meals": len(today_meals),
+                "water": today_water,
+                "exercise": today_exercise
+            },
+            "week": {
+                "meals": len(week_meals),
+                "water": week_water,
+                "exercise": week_exercise
+            },
+            "month": {
+                "meals": len(month_meals)
+            },
+            "current_weight": current_weight,
+            "streak": streak,
+            "timestamp": now.isoformat()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in get_dashboard_stats: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/user-insights", methods=["GET"])
+def get_user_insights():
+    """Get personalized health insights"""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Missing user_id parameter"}), 400
+        
+        # Get user profile for goals
+        profile = profiles_collection.find_one({"user_id": user_id})
+        if not profile:
+            return jsonify({"error": "Profile not found"}), 404
+        
+        calorie_target = profile.get("calorie_target", 2000)
+        
+        # Get today's data
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Get today's meals
+        today_meals = list(meals_collection.find({
+            "user_id": user_id,
+            "saved_at": {"$gte": today.isoformat()}
+        }))
+        
+        # Calculate today's calories
+        today_calories = 0
+        for meal in today_meals:
+            nutrition = meal.get("nutrition_info", "")
+            for line in nutrition.split('\n'):
+                if 'calories' in line.lower():
+                    parts = line.split('|')
+                    if len(parts) >= 2:
+                        try:
+                            today_calories += int(parts[1].strip())
+                        except:
+                            pass
+        
+        # Get today's water
+        today_water = sum(
+            w["amount"] for w in db["water"].find({
+                "user_id": user_id,
+                "recorded_at": {"$gte": today.isoformat()}
+            })
+        )
+        
+        # Get today's exercise
+        today_exercise = sum(
+            e["duration"] for e in db["exercise"].find({
+                "user_id": user_id,
+                "recorded_at": {"$gte": today.isoformat()}
+            })
+        )
+        
+        # Generate insights
+        insights = []
+        
+        # Calorie insights
+        if today_calories > calorie_target * 1.2:
+            insights.append({
+                "type": "warning",
+                "title": "High Calorie Intake",
+                "message": f"You've consumed {today_calories} calories, which is above your {calorie_target} goal.",
+                "icon": "exclamationmark.triangle.fill",
+                "color": "red"
+            })
+        elif today_calories < calorie_target * 0.8:
+            insights.append({
+                "type": "info",
+                "title": "Low Calorie Intake",
+                "message": f"You've only consumed {today_calories} calories today. Make sure you're eating enough!",
+                "icon": "info.circle.fill",
+                "color": "blue"
+            })
+        
+        # Water insights
+        if today_water < 1000:
+            insights.append({
+                "type": "reminder",
+                "title": "Stay Hydrated",
+                "message": f"You've only had {int(today_water)}ml of water today. Try to drink more!",
+                "icon": "drop.fill",
+                "color": "blue"
+            })
+        
+        # Exercise insights
+        if today_exercise == 0:
+            insights.append({
+                "type": "motivation",
+                "title": "Get Moving",
+                "message": "You haven't logged any exercise today. Even a short walk counts!",
+                "icon": "figure.walk",
+                "color": "green"
+            })
+        
+        return jsonify({
+            "insights": insights,
+            "today_stats": {
+                "calories": today_calories,
+                "water": today_water,
+                "exercise": today_exercise
+            },
+            "goals": {
+                "calories": calorie_target,
+                "water": 2000,
+                "exercise": 30
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in get_user_insights: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 # Error handlers
 @app.errorhandler(404)
