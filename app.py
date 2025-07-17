@@ -83,6 +83,7 @@ def health():
 
 @app.route("/register", methods=["POST"])
 def register():
+    print("📩 /register endpoint called")
     try:
         data = request.get_json()
         if not data:
