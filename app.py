@@ -44,6 +44,11 @@ meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
+
+# Debug Process
+print("✅ Connected to MongoDB URI:", os.getenv("MONGO_URI"))
+print("✅ Using DB name:", db.name)
+
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
@@ -104,6 +109,7 @@ def register():
         }
         
         result = users_collection.insert_one(user)
+        print(f"✅ Inserted user with ID: {result.inserted_id}")
         return jsonify({
             "user_id": str(result.inserted_id), 
             "name": data["name"]
