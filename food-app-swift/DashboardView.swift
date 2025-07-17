@@ -1032,7 +1032,7 @@ struct DashboardView: View {
     
     func fetchMeals() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-2yra.onrender.com/user-meals?user_id=\(userId)") else {
             networkError = .noInternet
             return
         }
@@ -1091,7 +1091,7 @@ struct DashboardView: View {
     
     func fetchWaterData() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-swift.onrender.com/user-water?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-2yra.onrender.com/user-water?user_id=\(userId)") else {
             return
         }
 
@@ -1120,7 +1120,7 @@ struct DashboardView: View {
     
     func fetchExerciseData() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-swift.onrender.com/user-exercise?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-2yra.onrender.com/user-exercise?user_id=\(userId)") else {
             return
         }
 
@@ -1149,7 +1149,7 @@ struct DashboardView: View {
     
     func fetchWeightData() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-swift.onrender.com/user-weight?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-2yra.onrender.com/user-weight?user_id=\(userId)") else {
             return
         }
 

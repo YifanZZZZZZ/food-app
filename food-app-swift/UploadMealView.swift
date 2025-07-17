@@ -604,7 +604,7 @@ struct UploadMealView: View {
             "saved_at": ISO8601DateFormatter().string(from: selectedDate)
         ]
 
-        guard let url = URL(string: "https://food-app-swift.onrender.com/save-meal"),
+        guard let url = URL(string: "https://food-app-2yra.onrender.com/save-meal"),
               let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
             errorMessage = "Failed to prepare meal data"
             return

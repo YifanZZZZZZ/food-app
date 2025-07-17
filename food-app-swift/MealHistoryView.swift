@@ -190,7 +190,7 @@ struct MealHistoryView: View {
     func fetchMeals() {
         guard let userID = UserDefaults.standard.string(forKey: "user_id"),
               !userID.isEmpty,
-              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userID)") else {
+              let url = URL(string: "https://food-app-2yra.onrender.com/user-meals?user_id=\(userID)") else {
             errorMessage = "Please log in to view meal history"
             return
         }

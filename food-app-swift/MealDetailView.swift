@@ -490,7 +490,7 @@ struct MealDetailView: View {
             "meal_type": meal.meal_type ?? "Lunch"
         ]
         
-        guard let url = URL(string: "https://food-app-swift.onrender.com/update-meal"),
+        guard let url = URL(string: "https://food-app-2yra.onrender.com/update-meal"),
               let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
             self.isSaving = false
             return

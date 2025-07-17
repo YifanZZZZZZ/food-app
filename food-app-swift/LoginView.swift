@@ -312,7 +312,7 @@ struct LoginView: View {
 
     // MARK: - /ping First
     private func pingServerBeforeLogin(completion: @escaping () -> Void) {
-        guard let pingURL = URL(string: "https://food-app-swift.onrender.com/ping") else {
+        guard let pingURL = URL(string: "https://food-app-2yra.onrender.com/ping") else {
             completion()
             return
         }
@@ -332,7 +332,7 @@ struct LoginView: View {
         isLoading = true
         loginFailed = false
         
-        guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
+        guard let url = URL(string: "https://food-app-2yra.onrender.com/login") else { return }
 
         let payload = ["email": email, "password": password]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {

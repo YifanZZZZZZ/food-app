@@ -308,7 +308,7 @@ struct RegisterView: View {
         isLoading = true
         registrationFailed = false
         
-        guard let url = URL(string: "https://food-app-swift.onrender.com/register") else { return }
+        guard let url = URL(string: "https://food-app-2yra.onrender.com/register") else { return }
 
         let payload = ["name": name, "email": email, "password": password]
         var request = URLRequest(url: url)
@@ -320,15 +320,24 @@ struct RegisterView: View {
             DispatchQueue.main.async {
                 self.isLoading = false
                 
-                if error != nil {
+                //if error != nil {
+                //    self.registrationFailed = true
+                 //   self.registrationError = "Network error. Please try again."
+                //    return
+                //}
+                
+                if let error = error {
+                    print("❌ Network error: \(error.localizedDescription)")
                     self.registrationFailed = true
-                    self.registrationError = "Network error. Please try again."
+                    self.registrationError = "Network error: \(error.localizedDescription)"
                     return
                 }
+
                 
                 guard let data = data else {
                     self.registrationFailed = true
                     self.registrationError = "No response from server."
+                    print("📦 Response body:", body)
                     return
                 }
                 
@@ -338,6 +347,7 @@ struct RegisterView: View {
                         self.registrationError = "This email is already registered."
                         return
                     } else if httpResponse.statusCode != 200 {
+                        print("📬 Status code:", httpResponse.statusCode)
                         self.registrationFailed = true
                         self.registrationError = "Registration failed. Please try again."
                         return

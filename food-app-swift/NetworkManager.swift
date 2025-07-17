@@ -3,7 +3,7 @@ import Foundation
 class NetworkManager {
     static let shared = NetworkManager()
     
-    private let baseURL = "https://food-app-swift.onrender.com"
+    private let baseURL = "https://food-app-2yra.onrender.com"
     
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -98,13 +98,29 @@ class NetworkManager {
                 
                 if let httpResponse = response as? HTTPURLResponse {
                     print("📡 Response status: \(httpResponse.statusCode)")
-                    
-                    if httpResponse.statusCode != 200 {
-                        if let responseString = String(data: data, encoding: .utf8) {
-                            print("❌ Error response: \(responseString)")
+
+                    // 1️⃣ Check for empty data
+                    if data.isEmpty {
+                        print("🛑 Empty response body received from server.")
+                        completion(.failure(NSError(domain: "API", code: -10, userInfo: [NSLocalizedDescriptionKey: "Server returned no data."])))
+                        return
+                    }
+
+                    // 2️⃣ Try to print UTF-8 response (might be HTML or JSON)
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("🧾 Raw response (utf8):\n\(responseString)")
+
+                        // 3️⃣ Quick validation: is it valid JSON?
+                        if responseString.trimmingCharacters(in: .whitespacesAndNewlines).first != "{" {
+                            print("⚠️ Warning: Response is not valid JSON. Possibly HTML or truncated.")
                         }
+                    } else {
+                        print("🧾 Raw response is not UTF-8 decodable.")
+                        print("🧾 Raw base64:", data.base64EncodedString())
                     }
                 }
+
+
                 
                 do {
                     let result = try JSONDecoder().decode(GeminiResult.self, from: data)
