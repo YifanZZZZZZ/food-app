@@ -133,8 +133,8 @@ struct MealDetailView: View {
                             }
                         }
                         
-                        // Nutrition Overview Card
-                        NutritionOverviewCard(nutritionInfo: updatedNutritionInfo.isEmpty ? meal.nutrition_info : updatedNutritionInfo)
+                        // Beautiful Nutrition Overview Card (Updated)
+                        BeautifulNutritionView(nutritionText: updatedNutritionInfo.isEmpty ? meal.nutrition_info : updatedNutritionInfo)
                         
                         // Visible Ingredients Section
                         VStack(alignment: .leading, spacing: 16) {
@@ -448,6 +448,7 @@ struct MealDetailView: View {
             
             switch result {
             case .success(let nutritionData):
+                // Update the nutrition info for Beautiful Nutrition View
                 self.updatedNutritionInfo = nutritionData.nutrition_info
                 
             case .failure(let error):
@@ -609,83 +610,6 @@ struct InfoPill: View {
                         .stroke(color.opacity(0.3), lineWidth: 1)
                 )
         )
-    }
-}
-
-struct NutritionOverviewCard: View {
-    let nutritionInfo: String
-    
-    var nutritionData: [(String, String, Color)] {
-        var data: [(String, String, Color)] = []
-        
-        for line in nutritionInfo.split(separator: "\n") {
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: CharacterSet.whitespaces) }
-            if parts.count >= 2 {
-                let nutrient = parts[0]
-                let value = parts[1]
-                let unit = parts.count > 2 ? parts[2] : ""
-                
-                var color: Color = .gray
-                if nutrient.lowercased().contains("protein") { color = .blue }
-                else if nutrient.lowercased().contains("carb") { color = .orange }
-                else if nutrient.lowercased().contains("fat") { color = .purple }
-                else if nutrient.lowercased().contains("calories") { color = .red }
-                
-                data.append((nutrient, "\(value) \(unit)", color))
-            }
-        }
-        
-        return data
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Nutrition Facts")
-                .font(.headline)
-                .foregroundColor(.white)
-            
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                ForEach(nutritionData.prefix(4), id: \.0) { item in
-                    HStack {
-                        Circle()
-                            .fill(item.2.opacity(0.2))
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Image(systemName: getNutrientIcon(item.0))
-                                    .foregroundColor(item.2)
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.1)
-                                .font(.subheadline.bold())
-                                .foregroundColor(.white)
-                            Text(item.0)
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        
-                        Spacer()
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-        )
-    }
-    
-    func getNutrientIcon(_ nutrient: String) -> String {
-        if nutrient.lowercased().contains("protein") { return "flame.fill" }
-        else if nutrient.lowercased().contains("carb") { return "leaf.fill" }
-        else if nutrient.lowercased().contains("fat") { return "drop.fill" }
-        else if nutrient.lowercased().contains("calories") { return "flame.fill" }
-        else { return "circle.fill" }
     }
 }
 

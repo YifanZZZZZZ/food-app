@@ -208,8 +208,10 @@ def estimate_nutrition_from_ingredients(dish_names, visible_ingredients, hidden_
         response = gemini_model.generate_content(prompt)
         
         if response and response.text:
+            # Clean the response before returning
+            cleaned_nutrition = clean_nutrition_response(response.text)
             print("✅ Complete meal nutrition calculation done")
-            return response.text
+            return cleaned_nutrition
         else:
             return "Nutrition estimation failed"
             
@@ -346,8 +348,10 @@ def recalculate_nutrition_enhanced(ingredients_text):
         response = gemini_model.generate_content(prompt)
         
         if response and response.text:
+            # Clean the response before returning
+            cleaned_nutrition = clean_nutrition_response(response.text)
             print("✅ Nutrition recalculated successfully")
-            return response.text
+            return cleaned_nutrition
         else:
             raise Exception("Empty response from Gemini")
             
@@ -355,6 +359,7 @@ def recalculate_nutrition_enhanced(ingredients_text):
         print(f"❌ Nutrition recalculation error: {str(e)}")
         error_msg = str(e)
         return f"Calories | 0 | kcal | Recalculation failed: {error_msg}\nProtein | 0 | g | Recalculation failed: {error_msg}\nFat | 0 | g | Recalculation failed: {error_msg}\nCarbohydrates | 0 | g | Recalculation failed: {error_msg}\nFiber | 0 | g | Recalculation failed: {error_msg}\nSugar | 0 | g | Recalculation failed: {error_msg}\nSodium | 0 | mg | Recalculation failed: {error_msg}"
+
 
 def validate_image_for_analysis(image_path):
     """Validate image before analysis"""
@@ -372,3 +377,31 @@ def validate_image_for_analysis(image_path):
             
     except Exception as e:
         return False, f"Invalid image: {str(e)}"
+    
+def clean_nutrition_response(nutrition_text):
+    """Clean nutrition response by removing markdown headers and formatting properly"""
+    lines = nutrition_text.strip().split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        # Skip empty lines and markdown headers
+        if not line or '------' in line or line.startswith('#') or line.startswith('**'):
+            continue
+        
+        # Ensure proper pipe separation and clean up
+        if '|' in line:
+            parts = [part.strip() for part in line.split('|')]
+            if len(parts) >= 3:
+                nutrient = parts[0]
+                value = parts[1]
+                unit = parts[2]
+                reasoning = parts[3] if len(parts) > 3 else ""
+                
+                # Reconstruct clean line
+                cleaned_line = f"{nutrient} | {value} | {unit}"
+                if reasoning:
+                    cleaned_line += f" | {reasoning}"
+                cleaned_lines.append(cleaned_line)
+    
+    return '\n'.join(cleaned_lines)

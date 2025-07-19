@@ -204,7 +204,7 @@ struct DashboardView: View {
                         // Recent Meals Section
                         recentMealsSection
                         
-                        // Enhanced Nutrition Breakdown
+                        // Enhanced Nutrition Breakdown with Beautiful Display
                         if !meals.isEmpty {
                             enhancedNutritionBreakdownSection
                         }
@@ -857,46 +857,45 @@ struct DashboardView: View {
         }
     }
     
+    // MARK: - Updated Enhanced Nutrition Breakdown Section with Beautiful Display
     var enhancedNutritionBreakdownSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Today's Nutrition")
                 .font(.title3.bold())
                 .foregroundColor(.white)
             
-            VStack(spacing: 12) {
-                NutritionBar(
-                    nutrient: "Protein",
-                    current: totalProtein,
-                    goal: calculateProteinGoal(),
-                    color: .blue
-                )
-                
-                NutritionBar(
-                    nutrient: "Carbohydrates",
-                    current: totalCarbs,
-                    goal: calculateCarbGoal(),
-                    color: .orange
-                )
-                
-                NutritionBar(
-                    nutrient: "Fat",
-                    current: totalFat,
-                    goal: calculateFatGoal(),
-                    color: .purple
-                )
-                
-                NutritionBar(
-                    nutrient: "Fiber",
-                    current: totalFiber,
-                    goal: 25,
-                    color: .green
+            // Create a combined nutrition string from today's meals
+            let todaysNutritionText = createTodaysNutritionText()
+            
+            if !todaysNutritionText.isEmpty {
+                BeautifulNutritionView(nutritionText: todaysNutritionText)
+            } else {
+                // Empty state
+                VStack(spacing: 12) {
+                    Image(systemName: "chart.pie")
+                        .font(.title)
+                        .foregroundColor(.gray)
+                    
+                    Text("No nutrition data yet")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Add a meal to see your nutrition breakdown")
+                        .font(.caption)
+                        .foregroundColor(.gray.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [5]))
+                                .foregroundColor(.white.opacity(0.1))
+                        )
                 )
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white.opacity(0.05))
-            )
         }
     }
     
@@ -979,7 +978,48 @@ struct DashboardView: View {
         }
     }
     
-    // MARK: - Functions
+    // MARK: - Helper Functions
+    
+    // Add this helper function to create today's nutrition text
+    func createTodaysNutritionText() -> String {
+        // Combine nutrition from all today's meals
+        let todaysMeals = meals.filter { isSameDay($0.saved_at) }
+        
+        if todaysMeals.isEmpty {
+            return ""
+        }
+        
+        // Aggregate nutrition values
+        var totalCalories = 0
+        var totalProtein = 0
+        var totalCarbs = 0
+        var totalFat = 0
+        var totalFiber = 0
+        var totalSugar = 0
+        var totalSodium = 0
+        
+        for meal in todaysMeals {
+            totalCalories += extractNutrient(name: "calories", from: meal.nutrition_info) ?? 0
+            totalProtein += extractNutrient(name: "protein", from: meal.nutrition_info) ?? 0
+            totalCarbs += extractNutrient(name: "carbohydrates", from: meal.nutrition_info) ?? 0
+            totalFat += extractNutrient(name: "fat", from: meal.nutrition_info) ?? 0
+            totalFiber += extractNutrient(name: "fiber", from: meal.nutrition_info) ?? 0
+            totalSugar += extractNutrient(name: "sugar", from: meal.nutrition_info) ?? 0
+            totalSodium += extractNutrient(name: "sodium", from: meal.nutrition_info) ?? 0
+        }
+        
+        return """
+        Calories | \(totalCalories) | kcal | Total from \(todaysMeals.count) meals today
+        Protein | \(totalProtein) | g | Combined protein intake
+        Fat | \(totalFat) | g | Total fat consumption
+        Carbohydrates | \(totalCarbs) | g | Total carb intake
+        Fiber | \(totalFiber) | g | Total fiber intake
+        Sugar | \(totalSugar) | g | Total sugar consumption
+        Sodium | \(totalSodium) | mg | Total sodium intake
+        """
+    }
+    
+    // MARK: - All other existing functions remain the same...
     
     func initializeDashboard() {
         guard !hasInitialized else { return }
@@ -1415,7 +1455,7 @@ struct DashboardView: View {
     }
 }
 
-// MARK: - Enhanced Supporting Views
+// MARK: - Enhanced Supporting Views (all existing views remain the same)
 
 struct MacroCard: View {
     let title: String

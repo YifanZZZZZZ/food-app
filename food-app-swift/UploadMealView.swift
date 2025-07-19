@@ -24,6 +24,7 @@ struct UploadMealView: View {
     @State private var showDatePicker = false
     @State private var showCamera = false
     @State private var analysisStep = 0 // 0: select, 1: analyzing, 2: results
+    @State private var isRecalculatingNutrition = false
     
     let mealTypes = ["Breakfast", "Lunch", "Evening Snacks", "Dinner"]
     
@@ -191,6 +192,7 @@ struct UploadMealView: View {
                                             visibleIngredients = []
                                             hiddenIngredients = []
                                             nutritionLines = []
+                                            rawNutritionInfo = ""
                                         }) {
                                             HStack(spacing: 4) {
                                                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -330,12 +332,39 @@ struct UploadMealView: View {
                                         .padding(.horizontal)
                                     }
                                     
-                                    // Nutrition Info
-                                    NutritionCard(
-                                        nutritionLines: nutritionLines,
-                                        calories: calories,
-                                        onRecalculate: (isEditingIngredients || isEditingHidden) ? recalculateNutrition : nil
-                                    )
+                                    // Beautiful Nutrition Display with Recalculate Option
+                                    VStack(spacing: 16) {
+                                        BeautifulNutritionView(nutritionText: rawNutritionInfo)
+                                        
+                                        // Recalculate button (if editing)
+                                        if (isEditingIngredients || isEditingHidden) {
+                                            Button(action: recalculateNutrition) {
+                                                HStack {
+                                                    if isRecalculatingNutrition {
+                                                        ProgressView()
+                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                            .scaleEffect(0.8)
+                                                    } else {
+                                                        Image(systemName: "arrow.clockwise")
+                                                        Text("Recalculate Nutrition")
+                                                    }
+                                                }
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.white)
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 12)
+                                                .background(
+                                                    LinearGradient(
+                                                        gradient: Gradient(colors: [.purple, .purple.opacity(0.8)]),
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .cornerRadius(12)
+                                            }
+                                            .disabled(isRecalculatingNutrition)
+                                        }
+                                    }
                                     .padding(.horizontal)
                                     
                                     // Save Button
@@ -398,7 +427,7 @@ struct UploadMealView: View {
         }
     }
     
-    // Helper functions
+    // MARK: - Helper functions
     
     func removeVisibleIngredient(id: String) {
         visibleIngredients.removeAll { $0.id == id }
@@ -429,7 +458,7 @@ struct UploadMealView: View {
     func recalculateNutrition() {
         guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
         
-        isLoading = true
+        isRecalculatingNutrition = true
         
         // Combine visible and hidden ingredients for recalculation
         let allIngredients = visibleIngredients + hiddenIngredients
@@ -439,15 +468,19 @@ struct UploadMealView: View {
             ingredients: ingredientsList,
             userId: userId
         ) { result in
-            self.isLoading = false
+            self.isRecalculatingNutrition = false
             
             switch result {
             case .success(let nutritionData):
-                self.nutritionLines = self.parseNutritionLines(from: nutritionData.nutrition_info)
-                self.calories = self.extractCalories(from: nutritionData.nutrition_info)
+                // Update the raw nutrition info for the Beautiful Nutrition View
                 self.rawNutritionInfo = nutritionData.nutrition_info
                 
-            case .failure(_):
+                // Also update the legacy arrays for compatibility
+                self.nutritionLines = self.parseNutritionLines(from: nutritionData.nutrition_info)
+                self.calories = self.extractCalories(from: nutritionData.nutrition_info)
+                
+            case .failure(let error):
+                print("❌ Nutrition recalculation failed: \(error)")
                 self.errorMessage = "Failed to recalculate nutrition"
             }
         }
@@ -515,6 +548,7 @@ struct UploadMealView: View {
         hiddenIngredients = []
         nutritionLines = []
         calories = nil
+        rawNutritionInfo = ""
         
         let resizedImage = resizeImage(image, maxDimension: 800) ?? image
         guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
@@ -551,9 +585,12 @@ struct UploadMealView: View {
                         self.rawHiddenIngredients = ""
                     }
                     
+                    // Set raw nutrition info for Beautiful Nutrition View
+                    self.rawNutritionInfo = geminiResult.nutrition_info
+                    
+                    // Also maintain legacy arrays for compatibility
                     self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
                     self.calories = self.extractCalories(from: geminiResult.nutrition_info)
-                    self.rawNutritionInfo = geminiResult.nutrition_info
                 }
                 
             case .failure(let error):
@@ -813,106 +850,6 @@ struct AnalyzingView: View {
         .onAppear {
             dots = 3
         }
-    }
-}
-
-struct NutritionCard: View {
-    let nutritionLines: [String]
-    let calories: Int?
-    let onRecalculate: (() -> Void)?
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "chart.pie.fill")
-                        .foregroundColor(Color.purple)
-                    
-                    Text("Nutrition Facts")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
-                
-                Spacer()
-                
-                if let onRecalculate = onRecalculate {
-                    Button(action: onRecalculate) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("Recalculate")
-                        }
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color.purple)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(Color.purple.opacity(0.2))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.purple.opacity(0.3), lineWidth: 1)
-                                )
-                        )
-                    }
-                }
-            }
-            
-            if let calories = calories {
-                HStack {
-                    Image(systemName: "flame.fill")
-                        .foregroundColor(.orange)
-                        .font(.title2)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(calories)")
-                            .font(.title2.bold())
-                            .foregroundColor(.white)
-                        Text("Calories")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    Spacer()
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.orange.opacity(0.1))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-                        )
-                )
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(nutritionLines, id: \.self) { line in
-                    if !line.lowercased().contains("calories") {
-                        HStack {
-                            Circle()
-                                .fill(Color.purple.opacity(0.2))
-                                .frame(width: 8, height: 8)
-                            
-                            Text(line)
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.9))
-                            
-                            Spacer()
-                        }
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-        )
     }
 }
 
