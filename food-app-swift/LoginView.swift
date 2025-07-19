@@ -16,7 +16,7 @@ struct LoginView: View {
     @State private var passwordError = ""
     @State private var loginFailed = false
     @State private var loginErrorMessage = ""
-    @State private var navigate = false
+    @State private var navigateToDashboard = false
     @State private var isLoading = false
     @State private var showRegister = false
 
@@ -284,8 +284,9 @@ struct LoginView: View {
             .onTapGesture {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
-            .navigationDestination(isPresented: $navigate) {
-                ProfileSetupView()
+            .navigationDestination(isPresented: $navigateToDashboard) {
+                DashboardView()
+                    .navigationBarBackButtonHidden(true)
             }
             .navigationDestination(isPresented: $showRegister) {
                 RegisterView()
@@ -380,7 +381,8 @@ struct LoginView: View {
                     DispatchQueue.main.async {
                         withAnimation(.spring()) {
                             SessionManager.shared.login(id: response.user_id, name: response.name)
-                            self.navigate = true
+                            // Navigate directly to dashboard instead of profile setup
+                            self.navigateToDashboard = true
                         }
                     }
                 } else {

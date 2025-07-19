@@ -18,7 +18,7 @@ struct RegisterView: View {
     @State private var confirmPasswordError = ""
     @State private var registrationFailed = false
     @State private var registrationError = ""
-    @State private var navigateToProfile = false
+    @State private var navigateToDashboard = false // Changed from navigateToProfile
     @State private var isLoading = false
     @State private var agreedToTerms = false
 
@@ -245,8 +245,8 @@ struct RegisterView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .navigationDestination(isPresented: $navigateToProfile) {
-                ProfileSetupView()
+            .navigationDestination(isPresented: $navigateToDashboard) {
+                DashboardView()
                     .navigationBarBackButtonHidden(true)
             }
         }
@@ -347,7 +347,8 @@ struct RegisterView: View {
                 if let response = try? JSONDecoder().decode(RegisterResponse.self, from: data) {
                     withAnimation(.spring()) {
                         self.session.login(id: response.user_id, name: response.name)
-                        self.navigateToProfile = true
+                        // Navigate directly to dashboard instead of profile setup
+                        self.navigateToDashboard = true
                     }
                 } else {
                     self.registrationFailed = true
