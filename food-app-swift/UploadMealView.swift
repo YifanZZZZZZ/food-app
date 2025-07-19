@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import AVFoundation
 
 struct UploadMealView: View {
     @State private var selectedImage: UIImage?
@@ -25,6 +26,10 @@ struct UploadMealView: View {
     @State private var showCamera = false
     @State private var analysisStep = 0 // 0: select, 1: analyzing, 2: results
     @State private var isRecalculatingNutrition = false
+    
+    // Camera permission states
+    @State private var showCameraPermissionAlert = false
+    @State private var cameraPermissionStatus: AVAuthorizationStatus = .notDetermined
     
     let mealTypes = ["Breakfast", "Lunch", "Evening Snacks", "Dinner"]
     
@@ -108,8 +113,10 @@ struct UploadMealView: View {
                                 }
                                 
                                 HStack(spacing: 16) {
-                                    // Camera Button
-                                    Button(action: { showCamera = true }) {
+                                    // Camera Button with Permission Check
+                                    Button(action: {
+                                        checkCameraPermissionAndOpen()
+                                    }) {
                                         HStack {
                                             Image(systemName: "camera.fill")
                                             Text("Camera")
@@ -418,12 +425,66 @@ struct UploadMealView: View {
                 }
             }
             .preferredColorScheme(.dark)
+            .onAppear {
+                checkInitialCameraPermission()
+            }
             .sheet(isPresented: $showDatePicker) {
                 DatePickerSheet(selectedDate: $selectedDate)
             }
             .sheet(isPresented: $showCamera) {
-                ImagePicker(image: $selectedImage, sourceType: .camera)
+                SimpleCameraView(selectedImage: $selectedImage)
+                    .onDisappear {
+                        if selectedImage != nil {
+                            analyzeImage()
+                        }
+                    }
             }
+            .alert("Camera Access Required", isPresented: $showCameraPermissionAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Settings") {
+                    openAppSettings()
+                }
+            } message: {
+                Text("Please allow camera access in Settings to take photos of your meals.")
+            }
+        }
+    }
+    
+    // MARK: - Camera Permission Functions
+    
+    func checkInitialCameraPermission() {
+        cameraPermissionStatus = AVCaptureDevice.authorizationStatus(for: .video)
+    }
+    
+    func checkCameraPermissionAndOpen() {
+        switch cameraPermissionStatus {
+        case .authorized:
+            showCamera = true
+            
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self.cameraPermissionStatus = .authorized
+                        self.showCamera = true
+                    } else {
+                        self.cameraPermissionStatus = .denied
+                        self.showCameraPermissionAlert = true
+                    }
+                }
+            }
+            
+        case .denied, .restricted:
+            showCameraPermissionAlert = true
+            
+        @unknown default:
+            showCameraPermissionAlert = true
+        }
+    }
+    
+    func openAppSettings() {
+        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(settingsUrl)
         }
     }
     
@@ -714,6 +775,46 @@ struct UploadMealView: View {
     }
 }
 
+// MARK: - Simple Camera View (Clean & No Deprecation Warnings)
+
+struct SimpleCameraView: UIViewControllerRepresentable {
+    @Binding var selectedImage: UIImage?
+    @Environment(\.dismiss) var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: SimpleCameraView
+        
+        init(_ parent: SimpleCameraView) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.selectedImage = image
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
 // MARK: - Supporting Views
 
 struct MealTypeSelector: View {
@@ -849,45 +950,6 @@ struct AnalyzingView: View {
         .padding()
         .onAppear {
             dots = 3
-        }
-    }
-}
-
-// Image Picker
-struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var image: UIImage?
-    let sourceType: UIImagePickerController.SourceType
-    @Environment(\.dismiss) var dismiss
-    
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = sourceType
-        picker.delegate = context.coordinator
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: ImagePicker
-        
-        init(_ parent: ImagePicker) {
-            self.parent = parent
-        }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.image = image
-            }
-            parent.dismiss()
-        }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
         }
     }
 }
