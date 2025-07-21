@@ -3,7 +3,7 @@ services:
     name: food-analyzer
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app --workers 2 --threads 4 --timeout 120"
+    startCommand: "gunicorn app:app -k gevent --timeout 120 --workers 1"
     envVars:
       - key: GEMINI_API_KEY
         sync: false
