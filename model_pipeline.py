@@ -1,5 +1,5 @@
 from PIL import Image
-import google.generativeai as genai
+import requests
 import base64
 import os
 import re
@@ -15,10 +15,15 @@ from transformers import pipeline
 load_dotenv()
 
 # Load model
-classifier = pipeline(
-    "image-classification",
-    model="Shresthadev403/food-image-classification"
-)
+#classifier = pipeline(
+#    "image-classification",
+#    model="Shresthadev403/food-image-classification"
+#)
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/nateraw/food"
+HF_HEADERS = {
+    "Authorization": f"Bearer {os.getenv('HF_TOKEN', 'None')}",
+    "Content-Type": "image/jpeg"
+}
 
 # MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI")
@@ -147,64 +152,65 @@ def recipe_classification(image_path):
             image = image.convert('RGB')
 
         # Save optimized version
-        optimized_path = image_path.replace('.png', '_opt.jpg').replace('.jpeg', '_opt.jpg').replace('.jpg', '_opt.jpg')
+        optimized_path = image_path.replace('.png', '_opt.jpg') \
+                                   .replace('.jpeg', '_opt.jpg') \
+                                   .replace('.jpg', '_opt.jpg')
         image.save(optimized_path, 'JPEG', quality=85)
 
-        # Optionally encode image (if needed elsewhere)
-        image_data = encode_image(optimized_path)
-
-        # --- Classify the optimized image ---
-        optimized_image = Image.open(optimized_path)
-        try:
-            result = classifier(optimized_image)
-        except Exception as e:
-            print(f"Error during classification: {e}")
-            return None
-
-        # Clean up optimized file
+        # --- Classify via Hugging Face Inference API ---
+        with open(optimized_path, "rb") as f:
+            response = requests.post(HF_API_URL, headers=HF_HEADERS, data=f.read())
+        
         try:
             os.remove(optimized_path)
         except:
-            pass
+            pass  # Clean up regardless of outcome
 
-        predicted_food = result[0]['label'].replace("_", " ")
-        print(f"Predicted food: {predicted_food}")
+        if response.status_code != 200:
+            print(f"❌ HF API error: {response.status_code} - {response.text}")
+            return None
+
+        result = response.json()
+        if not result or not isinstance(result, list) or "label" not in result[0]:
+            print(f"❌ Invalid classification result: {result}")
+            return None
+
+        predicted_food = result[0]["label"].replace("_", " ")
+        print(f"🍽️ Predicted food: {predicted_food}")
 
         selected_recipe = search_recipe(predicted_food)
-
         if not selected_recipe:
-            print("No matching recipe found.")
-            return
+            print("⚠️ No matching recipe found.")
+            return None
 
-        recipe_dictionary = {'Name': selected_recipe['Name']}
+        recipe_dictionary = {"Name": selected_recipe["Name"]}
 
-        # Clean ingredients
-        raw_ingredients = selected_recipe['RecipeIngredientParts'][2:-1]
+        # Parse ingredients
+        raw_ingredients = selected_recipe.get("RecipeIngredientParts", "")
+        raw_ingredients = raw_ingredients[2:-1]  # Remove `c(` and `)`
         ingredients = [item.strip().strip('"') for item in raw_ingredients.split(",")]
-        recipe_dictionary['Ingredients'] = ingredients
+        recipe_dictionary["Ingredients"] = ingredients
 
-        # Extract nutrition
+        # Parse nutrition
         nutrition_keys = [
-            'Calories', 'FatContent', 'SaturatedFatContent', 'CholesterolContent',
-            'SodiumContent', 'CarbohydrateContent', 'FiberContent', 'SugarContent', 'ProteinContent'
+            "Calories", "FatContent", "SaturatedFatContent", "CholesterolContent",
+            "SodiumContent", "CarbohydrateContent", "FiberContent", "SugarContent", "ProteinContent"
         ]
         nutrition_directory = {}
         for key in nutrition_keys:
             try:
                 nutrition_directory[key] = float(selected_recipe[key])
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, KeyError):
                 nutrition_directory[key] = None
+        recipe_dictionary["Nutrition"] = nutrition_directory
 
-        recipe_dictionary['Nutrition'] = nutrition_directory
-
-        print("Recipe Information:")
+        print("📋 Recipe Info:")
         print(recipe_dictionary)
         return recipe_dictionary
 
     except Exception as e:
-        print(f"Could not process image {image_path}: {e}")
+        print(f"❌ Could not process image {image_path}: {e}")
         return None
-
 
 def validate_image_for_analysis(image_path):
     """Validate image before analysis"""
