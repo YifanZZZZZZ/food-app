@@ -40,10 +40,6 @@ profiles_collection.create_index("user_id")
 meals_collection = db["meals"]
 meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 
-# Configure Gemini for nutrition recalculation
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-
 
 # Debug Process
 print("✅ Connected to MongoDB URI:", os.getenv("MONGO_URI"))
@@ -194,7 +190,7 @@ def get_profile():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    """Image analysis endpoint - based on working web app"""
+    """Image analysis endpoint - using local model + CSV pipeline"""
     try:
         if "image" not in request.files:
             return jsonify({"error": "No image part in the request"}), 400
@@ -203,14 +199,14 @@ def analyze():
         user_id = request.form.get("user_id", "guest")
 
         # Validate file size (limit to 10MB)
-        image_file.seek(0, 2)  # Seek to end
+        image_file.seek(0, 2)
         file_size = image_file.tell()
-        image_file.seek(0)  # Reset to beginning
-        
-        if file_size > 10 * 1024 * 1024:  # 10MB limit
+        image_file.seek(0)
+
+        if file_size > 10 * 1024 * 1024:
             return jsonify({"error": "Image too large. Please use an image under 10MB"}), 413
 
-        if file_size < 1024:  # Too small
+        if file_size < 1024:
             return jsonify({"error": "Image too small. Please use a clearer image"}), 400
 
         filename = f"image_{int(time.time())}.png"
@@ -228,33 +224,27 @@ def analyze():
                 pass
             return jsonify({"error": f"Invalid image: {validation_msg}"}), 400
 
-        # Perform analysis with timeout handling
+        # Perform analysis with timeout
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
         import concurrent.futures
-        
+
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(full_image_analysis, image_path, user_id)
             try:
-                # Give it 90 seconds to complete
                 result = future.result(timeout=90)
-                
-                # Check if analysis actually succeeded
-                if "error" in result:
-                    print(f"⚠️ Analysis contained errors: {result.get('error', 'Unknown error')}")
-                    # Clean up and return error
+
+                if result.get("analysis_status") != "success":
+                    print(f"⚠️ Analysis failed: {result.get('debug_info', {}).get('error', 'Unknown error')}")
                     try:
                         os.remove(image_path)
                     except:
                         pass
                     return jsonify({
-                        "error": f"Analysis failed: {result.get('error', 'Unknown error')}",
+                        "error": "Analysis failed",
                         "suggestion": "Please try with a clearer image of food"
                     }), 500
-                
-                # Validate that we got meaningful results
-                if (result.get("dish_prediction", "").lower().startswith("analysis failed") or
-                    result.get("dish_prediction", "").lower().startswith("could not identify") or
-                    result.get("dish_prediction", "").lower().startswith("unable to analyze")):
+
+                if not result.get("dish_name") or "analysis failed" in result["dish_name"].lower():
                     try:
                         os.remove(image_path)
                     except:
@@ -263,7 +253,7 @@ def analyze():
                         "error": "Unable to analyze this image",
                         "suggestion": "Please ensure the image clearly shows food items"
                     }), 422
-                
+
             except concurrent.futures.TimeoutError:
                 print("⏱️ Analysis timeout")
                 try:
@@ -274,32 +264,24 @@ def analyze():
                     "error": "Analysis timeout",
                     "suggestion": "Please try with a simpler or clearer image"
                 }), 408
-        
+
         result["user_id"] = user_id
         print(f"✅ Analysis completed for {filename}")
-        print(f"📊 Dish: {result.get('dish_prediction', 'Unknown')}")
-        print(f"📊 Hidden ingredients: {result.get('hidden_ingredients', 'None')[:100]}...")
+        print(f"📊 Dish: {result.get('dish_name', 'Unknown')}")
+        print(f"📊 Ingredients: {result.get('ingredient_list', [])}")
+        print(f"📊 Ingredients: {result.get('nutrition_facts', [])}")
         print(f"⏱️ Analysis time: {result.get('analysis_time', 0):.2f}s")
-        
-        # Debug: Check if hidden ingredients exist
-        if result.get('hidden_ingredients'):
-            print(f"🔍 Hidden ingredients length: {len(result['hidden_ingredients'])}")
-            print(f"🔍 Hidden ingredients preview: {result['hidden_ingredients'][:200]}...")
-        else:
-            print("⚠️ No hidden ingredients in result")
-        
-        # Clean up
+
         try:
             os.remove(image_path)
         except:
             pass
-            
+
         return jsonify(result), 200
 
     except Exception as e:
         print("❌ analyze Exception:", str(e))
         traceback.print_exc()
-        # Clean up on error
         try:
             if 'image_path' in locals():
                 os.remove(image_path)
@@ -307,23 +289,6 @@ def analyze():
             pass
         return jsonify({
             "error": "Analysis failed",
-            "details": str(e)
-        }), 500
-
-@app.route("/analyze-enhanced", methods=["POST"])
-def analyze_enhanced():
-    """Enhanced analysis endpoint - redirects to main analyze since it's already fully dynamic"""
-    try:
-        # Since our main analysis is already fully dynamic and enhanced, 
-        # we can redirect to it with additional context
-        print("🔄 Enhanced analysis requested - using fully dynamic analysis")
-        return analyze()
-        
-    except Exception as e:
-        print("❌ Enhanced analyze Exception:", str(e))
-        traceback.print_exc()
-        return jsonify({
-            "error": "Enhanced analysis failed",
             "details": str(e)
         }), 500
 
@@ -345,29 +310,29 @@ def save_meal():
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
-            
-        required = ["user_id", "dish_prediction", "image_description", "nutrition_info"]
+
+        # Required fields for new pipeline
+        required = ["user_id", "dish_name", "ingredient_list", "nutrition_facts"]
         missing = [k for k in required if k not in data]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
 
-        # Process images
+        # Process base64 image fields
         image = data.get("image", None)
         image_full = data.get("image_full") or image
         image_thumb = data.get("image_thumb") or (compress_base64_image(image) if image else None)
 
-        # Build meal document
+        # Build MongoDB meal document
         meal = {
             "user_id": data["user_id"],
-            "dish_prediction": data["dish_prediction"],
-            "image_description": data["image_description"],
-            "nutrition_info": data["nutrition_info"],
-            "hidden_ingredients": data.get("hidden_ingredients", ""),
+            "dish_name": data["dish_name"],
+            "ingredient_list": data["ingredient_list"],
+            "nutrition_facts": data["nutrition_facts"],
             "image_full": image_full,
             "image_thumb": image_thumb,
             "meal_type": data.get("meal_type", "Lunch"),
             "saved_at": data.get("saved_at", datetime.now().isoformat()),
-            "analysis_method": "dynamic_ai",
+            "analysis_method": "local_model_csv",
             "contains_hardcoded_values": False
         }
 
@@ -376,7 +341,7 @@ def save_meal():
             "message": "Meal saved successfully",
             "meal_id": str(result.inserted_id)
         }), 200
-        
+
     except Exception as e:
         print(f"❌ Error in save_meal: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -388,59 +353,61 @@ def get_user_meals():
         if not user_id:
             return jsonify({"error": "Missing user_id parameter"}), 400
 
-        # Query meals for the user, sorted by date
+        # Query user's meals sorted by latest saved
         meals = list(meals_collection.find(
             {"user_id": user_id}
         ).sort("saved_at", -1))
-        
-        # Process each meal to ensure compatibility
+
         processed_meals = []
         for meal in meals:
-            # Convert ObjectId to string
-            meal["_id"] = str(meal["_id"])
-            
-            # Handle different image storage formats
+            meal["_id"] = str(meal["_id"])  # Convert ObjectId
+
+            # Handle binary image fallback
             if "image" in meal and isinstance(meal["image"], bytes):
-                meal["image_thumb"] = base64.b64encode(meal["image"]).decode('utf-8')
-                meal["image_full"] = meal["image_thumb"]
+                encoded = base64.b64encode(meal["image"]).decode('utf-8')
+                meal["image_full"] = encoded
+                meal["image_thumb"] = encoded
                 del meal["image"]
-            
-            # Ensure all required fields exist
-            meal.setdefault("dish_prediction", meal.get("dish", "Unknown Dish"))
-            meal.setdefault("image_description", meal.get("visible_ingredients", ""))
-            meal.setdefault("hidden_ingredients", "")
-            meal.setdefault("nutrition_info", "")
+
+            # Ensure required fields exist
+            meal.setdefault("dish_name", "Unknown Dish")
+            meal.setdefault("ingredient_list", [])
+            meal.setdefault("nutrition_facts", {})
             meal.setdefault("meal_type", "Lunch")
-            
-            # Handle timestamp/saved_at field
+
+            # Ensure timestamps are ISO strings
             if "timestamp" in meal:
                 if hasattr(meal["timestamp"], 'isoformat'):
                     meal["saved_at"] = meal["timestamp"].isoformat()
                 else:
                     meal["saved_at"] = str(meal["timestamp"])
             else:
-                meal.setdefault("saved_at", "")
-            
-            # Remove fields that iOS doesn't expect
-            fields_to_remove = ["timestamp", "visible_ingredients", "image_filename", "dish"]
-            for field in fields_to_remove:
-                meal.pop(field, None)
-            
-            # Ensure image fields exist
+                meal.setdefault("saved_at", datetime.now().isoformat())
+
+            # Ensure image fields
             meal.setdefault("image_full", "")
             meal.setdefault("image_thumb", "")
-            
+
+            # Clean up legacy or unused fields
+            for legacy_field in [
+                "timestamp", "visible_ingredients", "image_filename",
+                "dish", "dish_prediction", "image_description",
+                "nutrition_info", "hidden_ingredients"
+            ]:
+                meal.pop(legacy_field, None)
+
             processed_meals.append(meal)
 
-        print(f"🔍 Looking up meals for user_id: {user_id}")
-        print(f"📦 Total meals found: {len(processed_meals)}")
-        
+        print(f"🔍 Meals lookup for user_id: {user_id}")
+        print(f"📦 Total meals returned: {len(processed_meals)}")
         return jsonify(processed_meals), 200
-        
+
     except Exception as e:
         print(f"❌ Error in get_user_meals: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+from bson.objectid import ObjectId
 
 @app.route("/update-meal", methods=["PUT"])
 def update_meal():
@@ -448,39 +415,45 @@ def update_meal():
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
-        
+
         meal_id = data.get("meal_id")
         if not meal_id:
             return jsonify({"error": "Missing meal_id"}), 400
-        
-        # Prepare update data
+
+        # Prepare update fields
         update_data = {}
-        if "dish_prediction" in data:
-            update_data["dish_prediction"] = data["dish_prediction"]
-        if "image_description" in data:
-            update_data["image_description"] = data["image_description"]
-        if "nutrition_info" in data:
-            update_data["nutrition_info"] = data["nutrition_info"]
+        if "dish_name" in data:
+            update_data["dish_name"] = data["dish_name"]
+        if "ingredient_list" in data:
+            update_data["ingredient_list"] = data["ingredient_list"]
+        if "nutrition_facts" in data:
+            update_data["nutrition_facts"] = data["nutrition_facts"]
         if "meal_type" in data:
             update_data["meal_type"] = data["meal_type"]
-            
+
+        # If no fields to update
+        if not update_data:
+            return jsonify({"error": "No updatable fields provided"}), 400
+
         update_data["updated_at"] = datetime.now().isoformat()
         update_data["last_modified_method"] = "user_edit"
-        
-        # Update meal in database
+
         result = meals_collection.update_one(
             {"_id": ObjectId(meal_id)},
             {"$set": update_data}
         )
-        
+
         if result.modified_count > 0:
             return jsonify({"message": "Meal updated successfully"}), 200
         else:
             return jsonify({"error": "Meal not found or no changes made"}), 404
-            
+
     except Exception as e:
         print(f"❌ Error in update_meal: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+from bson.objectid import ObjectId
+from bson.errors import InvalidId
 
 @app.route("/delete-meal", methods=["DELETE"])
 def delete_meal():
@@ -488,70 +461,27 @@ def delete_meal():
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
-        
-        meal_id = data.get("meal_id")
+
+        meal_id = data.get("meal_id", "").strip()
         if not meal_id:
-            return jsonify({"error": "Missing meal_id"}), 400
-        
-        # Delete meal from database
-        result = meals_collection.delete_one({"_id": ObjectId(meal_id)})
-        
+            return jsonify({"error": "Missing or empty meal_id"}), 400
+
+        try:
+            object_id = ObjectId(meal_id)
+        except InvalidId:
+            return jsonify({"error": "Invalid meal_id format"}), 400
+
+        result = meals_collection.delete_one({"_id": object_id})
+
         if result.deleted_count > 0:
             return jsonify({"message": "Meal deleted successfully"}), 200
         else:
             return jsonify({"error": "Meal not found"}), 404
-            
+
     except Exception as e:
         print(f"❌ Error in delete_meal: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/recalculate-nutrition", methods=["POST"])
-def recalculate_nutrition():
-    """Fully dynamic nutrition recalculation endpoint"""
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Empty request"}), 400
-        
-        ingredients = data.get("ingredients", "")
-        user_id = data.get("user_id", "")
-        
-        if not ingredients:
-            return jsonify({"error": "No ingredients provided"}), 400
-        
-        # Use enhanced recalculation from model_pipeline
-        from model_pipeline import recalculate_nutrition_enhanced
-        
-        print(f"🔄 Recalculating nutrition for user {user_id}")
-        print(f"📋 Ingredients: {ingredients[:100]}...")
-        
-        try:
-            nutrition_info = recalculate_nutrition_enhanced(ingredients)
-            
-            # Check if recalculation failed
-            if "Recalculation failed" in nutrition_info:
-                return jsonify({
-                    "error": "Nutrition recalculation failed",
-                    "details": "Unable to calculate nutrition from provided ingredients"
-                }), 500
-            
-            return jsonify({
-                "nutrition_info": nutrition_info,
-                "calculation_method": "dynamic_ai",
-                "contains_hardcoded_values": False
-            }), 200
-            
-        except Exception as e:
-            print(f"❌ Recalculation error: {str(e)}")
-            return jsonify({
-                "error": "Nutrition recalculation failed",
-                "details": str(e)
-            }), 500
-            
-    except Exception as e:
-        print(f"❌ Error in recalculate_nutrition: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-    
     
 # Add these endpoints to your app.py file
 
