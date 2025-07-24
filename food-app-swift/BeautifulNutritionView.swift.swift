@@ -1,17 +1,9 @@
-//
-//  BeautifulNutritionView.swift.swift
-//  food-app-swift
-//
-//  Created by Utsav Doshi on 7/19/25.
-//
-
-// Create BeautifulNutritionView.swift
-
 import SwiftUI
 
 struct BeautifulNutritionView: View {
     let nutritionText: String
     @State private var nutritionItems: [NutritionItem] = []
+    @State private var debugInfo: String = ""
     
     var caloriesItem: NutritionItem? {
         nutritionItems.first { $0.name.lowercased().contains("calorie") }
@@ -19,6 +11,10 @@ struct BeautifulNutritionView: View {
     
     var otherItems: [NutritionItem] {
         nutritionItems.filter { !$0.name.lowercased().contains("calorie") }
+    }
+    
+    var hasValidNutrition: Bool {
+        !nutritionItems.isEmpty
     }
     
     var body: some View {
@@ -34,36 +30,98 @@ struct BeautifulNutritionView: View {
                     .foregroundColor(.white)
                 
                 Spacer()
+                
+                // Debug button (only in development)
+                #if DEBUG
+                Button("Debug") {
+                    print("🔍 DEBUG Nutrition Text:")
+                    print("Raw text: '\(nutritionText)'")
+                    print("Parsed items: \(nutritionItems.count)")
+                    for item in nutritionItems {
+                        print("- \(item.name): \(item.value) \(item.unit)")
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.gray)
+                #endif
             }
             
-            // Calories Highlight (if available)
-            if let calories = caloriesItem {
-                CaloriesHighlightCard(item: calories)
-            }
-            
-            // Other Nutrients Grid
-            if !otherItems.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Detailed Breakdown")
-                        .font(.headline)
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 12) {
-                        ForEach(otherItems) { item in
-                            NutrientCard(item: item)
+            if hasValidNutrition {
+                // Calories Highlight (if available)
+                if let calories = caloriesItem {
+                    CaloriesHighlightCard(item: calories)
+                }
+                
+                // Other Nutrients Grid
+                if !otherItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Detailed Breakdown")
+                            .font(.headline)
+                            .foregroundColor(.white.opacity(0.9))
+                        
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 12) {
+                            ForEach(otherItems) { item in
+                                NutrientCard(item: item)
+                            }
                         }
                     }
                 }
-            }
-            
-            // All Nutrients List (Alternative compact view)
-            VStack(spacing: 8) {
-                ForEach(nutritionItems) { item in
-                    NutrientRow(item: item)
+                
+                // All Nutrients List (Alternative compact view)
+                VStack(spacing: 8) {
+                    ForEach(nutritionItems) { item in
+                        NutrientRow(item: item)
+                    }
                 }
+            } else {
+                // Show error state when no nutrition is found
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundColor(.orange.opacity(0.6))
+                    
+                    Text("Nutrition data unavailable")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    Text("Unable to parse nutrition information for this meal")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                    
+                    // Show raw data in development
+                    #if DEBUG
+                    ScrollView {
+                        Text("Raw data: \(nutritionText)")
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.red.opacity(0.1))
+                            )
+                    }
+                    .frame(maxHeight: 100)
+                    #endif
+                    
+                    // Retry button
+                    Button("Try Parsing Again") {
+                        parseNutritionRobust()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.orange.opacity(0.2))
+                    )
+                }
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity)
             }
         }
         .padding()
@@ -74,7 +132,9 @@ struct BeautifulNutritionView: View {
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(
                             LinearGradient(
-                                colors: [.orange.opacity(0.3), .orange.opacity(0.1)],
+                                colors: hasValidNutrition ?
+                                    [.orange.opacity(0.3), .orange.opacity(0.1)] :
+                                    [.red.opacity(0.3), .red.opacity(0.1)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
@@ -83,16 +143,180 @@ struct BeautifulNutritionView: View {
                 )
         )
         .onAppear {
-            parseNutrition()
+            parseNutritionRobust()
         }
         .onChange(of: nutritionText) { _, _ in
-            parseNutrition()
+            parseNutritionRobust()
         }
     }
     
-    private func parseNutrition() {
+    // MARK: - Enhanced Nutrition Parsing
+    
+    private func parseNutritionRobust() {
+        print("🔍 Starting robust nutrition parsing...")
+        print("📄 Input text (\(nutritionText.count) chars): '\(nutritionText.prefix(200))'")
+        
+        // Try the standard parser first
+        var items = NutritionParser.parseNutrition(from: nutritionText)
+        
+        // If standard parsing fails, try alternative methods
+        if items.isEmpty {
+            print("⚠️ Standard parsing failed, trying alternative methods...")
+            items = parseNutritionAlternative(from: nutritionText)
+        }
+        
+        // If still no items, try super basic parsing
+        if items.isEmpty {
+            print("⚠️ Alternative parsing failed, trying basic extraction...")
+            items = parseNutritionBasic(from: nutritionText)
+        }
+        
         withAnimation(.easeInOut(duration: 0.3)) {
-            nutritionItems = NutritionParser.parseNutrition(from: nutritionText)
+            nutritionItems = items
+        }
+        
+        print("📊 Final parsing result: \(items.count) items")
+        for item in items {
+            print("✅ \(item.name): \(item.value) \(item.unit)")
+        }
+    }
+    
+    // Alternative parsing method for edge cases
+    private func parseNutritionAlternative(from text: String) -> [NutritionItem] {
+        var items: [NutritionItem] = []
+        let lines = text.components(separatedBy: .newlines)
+        
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Skip empty or invalid lines
+            if trimmedLine.isEmpty ||
+               trimmedLine.contains("------") ||
+               trimmedLine.hasPrefix("---") ||
+               trimmedLine.lowercased().contains("ingredient | quantity") {
+                continue
+            }
+            
+            // Try different parsing approaches
+            if let item = parseLineWithMultipleSeparators(line: trimmedLine) {
+                items.append(item)
+            }
+        }
+        
+        return items
+    }
+    
+    // Parse with multiple separator types
+    private func parseLineWithMultipleSeparators(line: String) -> NutritionItem? {
+        let separators = ["|", ":", "-", "—", "–"]
+        
+        for separator in separators {
+            let parts = line.components(separatedBy: separator)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            
+            if parts.count >= 2 {
+                let name = parts[0]
+                let valueAndUnit = parts[1]
+                
+                // Skip invalid names
+                if name.isEmpty || name.contains("---") || name.lowercased() == "ingredient" {
+                    continue
+                }
+                
+                // Extract value and unit from "123 g" or "123g" format
+                if let (value, unit) = extractValueAndUnit(from: valueAndUnit) {
+                    return NutritionItem(
+                        name: name,
+                        value: value,
+                        unit: unit,
+                        reasoning: parts.count > 2 ? parts[2] : nil
+                    )
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    // Extract value and unit from combined string
+    private func extractValueAndUnit(from text: String) -> (String, String)? {
+        let pattern = #"(\d+\.?\d*)\s*([a-zA-Z]*)"#
+        let regex = try? NSRegularExpression(pattern: pattern)
+        let range = NSRange(location: 0, length: text.utf16.count)
+        
+        if let match = regex?.firstMatch(in: text, range: range),
+           let valueRange = Range(match.range(at: 1), in: text),
+           let unitRange = Range(match.range(at: 2), in: text) {
+            
+            let value = String(text[valueRange])
+            let unit = String(text[unitRange])
+            
+            // Validate value is numeric
+            if Double(value) != nil || Int(value) != nil {
+                return (value, unit.isEmpty ? "unit" : unit)
+            }
+        }
+        
+        return nil
+    }
+    
+    // Basic parsing as last resort
+    private func parseNutritionBasic(from text: String) -> [NutritionItem] {
+        var items: [NutritionItem] = []
+        
+        // Look for common nutrition keywords with numbers
+        let nutritionKeywords = [
+            "calories", "kcal", "protein", "carbohydrate", "carbs",
+            "fat", "fiber", "sugar", "sodium", "vitamin", "calcium", "iron"
+        ]
+        
+        let lines = text.components(separatedBy: .newlines)
+        
+        for line in lines {
+            let lowercaseLine = line.lowercased()
+            
+            for keyword in nutritionKeywords {
+                if lowercaseLine.contains(keyword) {
+                    // Try to find numbers in the line
+                    let numberPattern = #"\b(\d+\.?\d*)\b"#
+                    let regex = try? NSRegularExpression(pattern: numberPattern)
+                    let range = NSRange(location: 0, length: line.utf16.count)
+                    
+                    if let match = regex?.firstMatch(in: line, range: range),
+                       let numberRange = Range(match.range(at: 1), in: line) {
+                        
+                        let value = String(line[numberRange])
+                        let unit = extractUnit(from: line, keyword: keyword)
+                        
+                        items.append(NutritionItem(
+                            name: keyword.capitalized,
+                            value: value,
+                            unit: unit,
+                            reasoning: "Basic extraction"
+                        ))
+                    }
+                }
+            }
+        }
+        
+        return items
+    }
+    
+    // Extract likely unit for a nutrient
+    private func extractUnit(from line: String, keyword: String) -> String {
+        let lowercaseLine = line.lowercased()
+        
+        // Common unit patterns
+        if lowercaseLine.contains("kcal") || lowercaseLine.contains("calorie") {
+            return "kcal"
+        } else if lowercaseLine.contains("mg") {
+            return "mg"
+        } else if lowercaseLine.contains("g") {
+            return "g"
+        } else if lowercaseLine.contains("ml") {
+            return "ml"
+        } else {
+            return "unit"
         }
     }
 }

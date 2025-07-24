@@ -157,7 +157,8 @@ struct MealDetailView: View {
                                 }
                             } else {
                                 VStack(spacing: 8) {
-                                    ForEach(meal.image_description.split(separator: "\n"), id: \.self) { line in
+                                    // FIXED: Filter out dashed lines when displaying
+                                    ForEach(filteredIngredientLines(from: meal.image_description), id: \.self) { line in
                                         IngredientDisplay(text: String(line))
                                     }
                                 }
@@ -186,7 +187,8 @@ struct MealDetailView: View {
                             } else {
                                 VStack(spacing: 8) {
                                     if let hidden = meal.hidden_ingredients, !hidden.isEmpty {
-                                        ForEach(hidden.split(separator: "\n"), id: \.self) { line in
+                                        // FIXED: Filter out dashed lines when displaying
+                                        ForEach(filteredIngredientLines(from: hidden), id: \.self) { line in
                                             IngredientDisplay(text: String(line), isHidden: true)
                                         }
                                     } else {
@@ -355,6 +357,43 @@ struct MealDetailView: View {
         }
     }
     
+    // MARK: - NEW: Filter Function for Ingredient Lines
+    
+    func filteredIngredientLines(from text: String) -> [String] {
+        return text.split(separator: "\n").compactMap { line in
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            
+            // Skip empty lines
+            if trimmedLine.isEmpty { return nil }
+            
+            // Skip dashed placeholder lines
+            if trimmedLine.contains("------") || trimmedLine.hasPrefix("---") {
+                print("⏭️ Skipping dashed line in display: \(trimmedLine)")
+                return nil
+            }
+            
+            // Skip header lines
+            if trimmedLine.lowercased().contains("ingredient | quantity number | unit") {
+                print("⏭️ Skipping header line in display: \(trimmedLine)")
+                return nil
+            }
+            
+            let parts = trimmedLine.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            
+            // Skip lines with invalid ingredient names
+            if parts.count >= 1 {
+                let ingredientName = parts[0].lowercased()
+                if ingredientName.contains("---") || ingredientName == "ingredient" || ingredientName.isEmpty {
+                    print("⏭️ Skipping invalid ingredient: \(ingredientName)")
+                    return nil
+                }
+            }
+            
+            // Return valid ingredient lines
+            return String(trimmedLine)
+        }
+    }
+    
     // MARK: - Helper Functions
     
     func formatDate(_ date: Date) -> String {
@@ -366,16 +405,16 @@ struct MealDetailView: View {
     func generateShareText() -> String {
         var text = "Check out my meal: \(meal.dish_prediction)\n\n"
         
-        // Add visible ingredients
+        // Add visible ingredients (filtered)
         text += "Visible Ingredients:\n"
-        for line in meal.image_description.split(separator: "\n") {
+        for line in filteredIngredientLines(from: meal.image_description) {
             text += "• \(line)\n"
         }
         
-        // Add hidden ingredients if they exist
+        // Add hidden ingredients if they exist (filtered)
         if let hidden = meal.hidden_ingredients, !hidden.isEmpty {
             text += "\nHidden Ingredients:\n"
-            for line in hidden.split(separator: "\n") {
+            for line in filteredIngredientLines(from: hidden) {
                 text += "• \(line)\n"
             }
         }
@@ -392,8 +431,8 @@ struct MealDetailView: View {
     func startEditing() {
         isEditing = true
         editedDishName = meal.dish_prediction
-        editedVisibleIngredients = parseIngredientsToEditable(from: meal.image_description)
-        editedHiddenIngredients = parseIngredientsToEditable(from: meal.hidden_ingredients ?? "")
+        editedVisibleIngredients = parseIngredientsToEditableFiltered(from: meal.image_description)
+        editedHiddenIngredients = parseIngredientsToEditableFiltered(from: meal.hidden_ingredients ?? "")
         updatedNutritionInfo = meal.nutrition_info
     }
     
@@ -541,8 +580,9 @@ struct MealDetailView: View {
         return image
     }
 
-    func parseIngredientsToEditable(from text: String) -> [EditableIngredient] {
-        text.split(separator: "\n").compactMap { line in
+    // UPDATED: Filter out dashed lines when parsing for editing
+    func parseIngredientsToEditableFiltered(from text: String) -> [EditableIngredient] {
+        return filteredIngredientLines(from: text).compactMap { line in
             let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: CharacterSet.whitespaces) }
             guard parts.count >= 3 else { return nil }
             return EditableIngredient(
