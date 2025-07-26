@@ -1,13 +1,13 @@
 # 🍎 NutriSnap - AI-Powered Nutrition Tracker
 
-<div align="center">  
-  [![Platform](https://img.shields.io/badge/Platform-iOS%2017%2B-blue.svg)](https://developer.apple.com/ios/)
-  [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org/)
-  [![Python](https://img.shields.io/badge/Python-3.9%2B-green.svg)](https://www.python.org/)
-  [![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-brightgreen.svg)](https://www.mongodb.com/atlas)
-  [![Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7.svg)](https://render.com/)
-  [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
+<div align="center">
+  <img src="https://developer.apple.com/assets/elements/icons/ios/ios-96x96_2x.png" height="30">
+  <img src="https://swift.org/assets/images/swift.svg" height="30">
+  <img src="https://www.python.org/static/opengraph-icon-200x200.png" height="30">
+  <img src="https://webassets.mongodb.com/_com_assets/cms/mongodb_logo1-76twgcu2dm.png" height="30">
+  <img src="https://cdn.render.com/images/logos/render-full-logo-light.png" height="30">
 </div>
+
 
 ## 📱 About NutriSnap
 
