@@ -1,16 +1,5 @@
 # 🍎 NutriSnap - AI-Powered Nutrition Tracker
 
-<div align="center">
-  <img src="https://developer.apple.com/assets/elements/icons/ios/ios-96x96_2x.png" height="30">
-  <img src="https://swift.org/assets/images/swift.svg" height="30">
-  <img src="https://www.python.org/static/opengraph-icon-200x200.png" height="30">
-  <img src="https://webassets.mongodb.com/_com_assets/cms/mongodb_logo1-76twgcu2dm.png" height="30">
-  <img src="https://cdn.render.com/images/logos/render-full-logo-light.png" height="30">
-</div>
-
-
-## 📱 About NutriSnap
-
 NutriSnap is a cutting-edge iOS application that revolutionizes nutrition tracking through AI-powered food image analysis. Simply snap a photo of your meal, and our advanced Google Gemini AI will instantly identify ingredients, uncover hidden components like cooking oils and spices, and provide comprehensive nutritional information.
 
 ### 🎯 Key Highlights
