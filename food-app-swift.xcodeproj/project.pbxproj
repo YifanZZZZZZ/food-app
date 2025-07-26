@@ -400,6 +400,9 @@
 				DEVELOPMENT_TEAM = 2X428LHR67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "NutriSnap needs camera access to take photos of your meals for nutrition analysis.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "NutriSnap needs photo library access to let you select meal photos for nutrition analysis.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -428,6 +431,9 @@
 				DEVELOPMENT_TEAM = 2X428LHR67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "NutriSnap needs camera access to take photos of your meals for nutrition analysis.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "NutriSnap needs photo library access to let you select meal photos for nutrition analysis.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
