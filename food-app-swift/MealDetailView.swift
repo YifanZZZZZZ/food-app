@@ -2,358 +2,46 @@ import SwiftUI
 
 struct MealDetailView: View {
     @State var meal: Meal
-    @State private var isEditing = false
-    @State private var editedDishName: String = ""
-    @State private var editedVisibleIngredients: [EditableIngredient] = []
-    @State private var editedHiddenIngredients: [EditableIngredient] = []
     @State private var showDeleteAlert = false
     @State private var isDeleting = false
-    @State private var isSaving = false
-    @State private var isRecalculatingNutrition = false
     @State private var showShareSheet = false
-    @State private var updatedNutritionInfo: String = ""
     @Environment(\.dismiss) var dismiss
 
+
     var body: some View {
-        ZStack {
-            // Gradient background
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.black,
-                    Color.black.opacity(0.95),
-                    Color(red: 0.1, green: 0.1, blue: 0.15)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Hero Image Section
-                    ZStack(alignment: .bottom) {
-                        if let base64 = meal.image_full, let uiImage = decodeBase64ToUIImage(base64) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 350)
-                                .clipped()
-                        } else {
-                            Rectangle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [.orange.opacity(0.4), .orange.opacity(0.2)]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(height: 350)
-                                .overlay(
-                                    Image(systemName: "photo")
-                                        .font(.system(size: 60))
-                                        .foregroundColor(.white.opacity(0.5))
-                                )
-                        }
-                        
-                        // Gradient overlay
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.clear,
-                                Color.black.opacity(0.7),
-                                Color.black.opacity(0.9)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 150)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        // Action buttons
-                        HStack(spacing: 12) {
-                            ActionButton(icon: "square.and.arrow.up") {
-                                showShareSheet = true
-                            }
-                            
-                            ActionButton(icon: "heart") {
-                                // Favorite action
-                            }
+            ZStack {
+                BackgroundGradient()
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        MealImageSection(meal: meal, showShareSheet: $showShareSheet)
+
+                        VStack(alignment: .leading, spacing: 24) {
+                            TitleAndMetaSection(meal: meal)
+                            NutritionFactsSection(meal: meal)
+                            IngredientListSection(meal: meal)
+                            DeleteButton(isDeleting: $isDeleting, showDeleteAlert: $showDeleteAlert, deleteMeal: deleteMeal)
                         }
                         .padding()
-                        .padding(.top, 50)
+                        .padding(.bottom, 40)
                     }
-
-                    // Content
-                    VStack(alignment: .leading, spacing: 24) {
-                        // Title and Meta
-                        VStack(alignment: .leading, spacing: 12) {
-                            if isEditing {
-                                TextField("Dish name", text: $editedDishName)
-                                    .font(.title2.bold())
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color.white.opacity(0.08))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 12)
-                                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                                            )
-                                    )
-                            } else {
-                                Text(meal.dish_prediction)
-                                    .font(.title2.bold())
-                                    .foregroundColor(.white)
-                            }
-                            
-                            HStack(spacing: 20) {
-                                if let savedAt = meal.saved_at,
-                                   let date = ISO8601DateFormatter().date(from: savedAt) {
-                                    InfoPill(
-                                        icon: "calendar",
-                                        text: formatDate(date),
-                                        color: .blue
-                                    )
-                                }
-                                
-                                if let mealType = meal.meal_type {
-                                    InfoPill(
-                                        icon: "fork.knife",
-                                        text: mealType,
-                                        color: .purple
-                                    )
-                                }
-                                
-                                if let calories = extractCalories(from: updatedNutritionInfo.isEmpty ? meal.nutrition_info : updatedNutritionInfo) {
-                                    InfoPill(
-                                        icon: "flame.fill",
-                                        text: "\(calories) kcal",
-                                        color: .orange
-                                    )
-                                }
-                            }
-                        }
-                        
-                        // Nutrition Overview Card
-                        NutritionOverviewCard(nutritionInfo: updatedNutritionInfo.isEmpty ? meal.nutrition_info : updatedNutritionInfo)
-                        
-                        // Visible Ingredients Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            SectionHeader(
-                                title: "Visible Ingredients",
-                                icon: "leaf.fill",
-                                color: Color.green,
-                                action: isEditing ? addNewVisibleIngredient : nil,
-                                actionIcon: isEditing ? "plus.circle" : nil
-                            )
-                            
-                            if isEditing {
-                                VStack(spacing: 12) {
-                                    ForEach($editedVisibleIngredients) { $ingredient in
-                                        EditableIngredientRow(
-                                            ingredient: $ingredient,
-                                            onDelete: { removeVisibleIngredient(id: ingredient.id) }
-                                        )
-                                    }
-                                }
-                            } else {
-                                VStack(spacing: 8) {
-                                    ForEach(meal.image_description.split(separator: "\n"), id: \.self) { line in
-                                        IngredientDisplay(text: String(line))
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Hidden Ingredients Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            SectionHeader(
-                                title: "Hidden Ingredients",
-                                icon: "eye.slash.fill",
-                                color: Color.pink,
-                                action: isEditing ? addNewHiddenIngredient : nil,
-                                actionIcon: isEditing ? "plus.circle" : nil
-                            )
-                            
-                            if isEditing {
-                                VStack(spacing: 12) {
-                                    ForEach($editedHiddenIngredients) { $ingredient in
-                                        EditableIngredientRow(
-                                            ingredient: $ingredient,
-                                            onDelete: { removeHiddenIngredient(id: ingredient.id) }
-                                        )
-                                    }
-                                }
-                            } else {
-                                VStack(spacing: 8) {
-                                    if let hidden = meal.hidden_ingredients, !hidden.isEmpty {
-                                        ForEach(hidden.split(separator: "\n"), id: \.self) { line in
-                                            IngredientDisplay(text: String(line), isHidden: true)
-                                        }
-                                    } else {
-                                        HStack {
-                                            Circle()
-                                                .fill(Color.pink.opacity(0.2))
-                                                .frame(width: 8, height: 8)
-                                            
-                                            Text("No hidden ingredients identified")
-                                                .font(.subheadline)
-                                                .foregroundColor(.white.opacity(0.6))
-                                                .italic()
-                                            
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 6)
-                                        .padding(.horizontal, 12)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(Color.white.opacity(0.05))
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Recalculate Nutrition Button (only when editing)
-                        if isEditing {
-                            Button(action: recalculateNutrition) {
-                                HStack {
-                                    if isRecalculatingNutrition {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                            .scaleEffect(0.8)
-                                    } else {
-                                        Image(systemName: "arrow.clockwise")
-                                    }
-                                    Text("Recalculate Nutrition")
-                                }
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [.purple, .purple.opacity(0.8)]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .cornerRadius(12)
-                            }
-                            .disabled(isRecalculatingNutrition)
-                        }
-                        
-                        // Action Buttons
-                        if isEditing {
-                            HStack(spacing: 12) {
-                                Button(action: cancelEditing) {
-                                    Text("Cancel")
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 16)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color.white.opacity(0.1))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 12)
-                                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                                )
-                                        )
-                                }
-                                
-                                Button(action: saveChanges) {
-                                    HStack {
-                                        if isSaving {
-                                            ProgressView()
-                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        } else {
-                                            Image(systemName: "checkmark")
-                                            Text("Save")
-                                        }
-                                    }
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [.green, .green.opacity(0.8)]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .cornerRadius(12)
-                                }
-                                .disabled(isSaving)
-                            }
-                        } else {
-                            HStack(spacing: 12) {
-                                Button(action: startEditing) {
-                                    HStack {
-                                        Image(systemName: "pencil")
-                                        Text("Edit")
-                                    }
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [.orange, .orange.opacity(0.8)]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .cornerRadius(12)
-                                }
-                                
-                                Button(action: { showDeleteAlert = true }) {
-                                    HStack {
-                                        if isDeleting {
-                                            ProgressView()
-                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        } else {
-                                            Image(systemName: "trash")
-                                            Text("Delete")
-                                        }
-                                    }
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [.red, .red.opacity(0.8)]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .cornerRadius(12)
-                                }
-                                .disabled(isDeleting)
-                            }
-                        }
-                    }
-                    .padding()
-                    .padding(.bottom, 40)
                 }
+                .ignoresSafeArea(edges: .top)
             }
-            .ignoresSafeArea(edges: .top)
-        }
-        .preferredColorScheme(.dark)
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("Delete Meal", isPresented: $showDeleteAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                deleteMeal()
+            .preferredColorScheme(.dark)
+            .navigationBarTitleDisplayMode(.inline)
+            .alert("Delete Meal", isPresented: $showDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteMeal()
+                }
+            } message: {
+                Text("Are you sure you want to delete this meal? This action cannot be undone.")
             }
-        } message: {
-            Text("Are you sure you want to delete this meal? This action cannot be undone.")
+            .sheet(isPresented: $showShareSheet) {
+                ShareSheet(items: [generateShareText()])
+            }
         }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(items: [generateShareText()])
-        }
-    }
     
     // MARK: - Helper Functions
     
@@ -364,168 +52,27 @@ struct MealDetailView: View {
     }
     
     func generateShareText() -> String {
-        var text = "Check out my meal: \(meal.dish_prediction)\n\n"
+        var text = "Check out my meal: \(meal.dish_name)\n\n"
         
-        // Add visible ingredients
-        text += "Visible Ingredients:\n"
-        for line in meal.image_description.split(separator: "\n") {
-            text += "• \(line)\n"
+        // Add ingredients
+        text += "Ingredients:\n"
+        for ingredient in meal.ingredient_list {
+            text += "• \(ingredient)\n"
         }
-        
-        // Add hidden ingredients if they exist
-        if let hidden = meal.hidden_ingredients, !hidden.isEmpty {
-            text += "\nHidden Ingredients:\n"
-            for line in hidden.split(separator: "\n") {
-                text += "• \(line)\n"
-            }
-        }
-        
-        // Add nutrition info
-        if let calories = extractCalories(from: meal.nutrition_info) {
-            text += "\nCalories: \(calories) kcal\n"
-        }
-        
+
+        // Add calories if available
+        let calories = meal.nutrition_facts.calories
+        text += "\nCalories: \(Int(calories)) kcal\n"
+
+
         text += "\nTracked with NutriSnap 🍎"
         return text
     }
     
-    func startEditing() {
-        isEditing = true
-        editedDishName = meal.dish_prediction
-        editedVisibleIngredients = parseIngredientsToEditable(from: meal.image_description)
-        editedHiddenIngredients = parseIngredientsToEditable(from: meal.hidden_ingredients ?? "")
-        updatedNutritionInfo = meal.nutrition_info
-    }
-    
-    func cancelEditing() {
-        isEditing = false
-        editedDishName = ""
-        editedVisibleIngredients = []
-        editedHiddenIngredients = []
-        updatedNutritionInfo = ""
-    }
-    
-    func addNewVisibleIngredient() {
-        editedVisibleIngredients.append(EditableIngredient(
-            id: UUID().uuidString,
-            name: "New Ingredient",
-            quantity: "1",
-            unit: "piece"
-        ))
-    }
-    
-    func addNewHiddenIngredient() {
-        editedHiddenIngredients.append(EditableIngredient(
-            id: UUID().uuidString,
-            name: "New Hidden Ingredient",
-            quantity: "1",
-            unit: "tsp"
-        ))
-    }
-    
-    func removeVisibleIngredient(id: String) {
-        editedVisibleIngredients.removeAll { $0.id == id }
-    }
-    
-    func removeHiddenIngredient(id: String) {
-        editedHiddenIngredients.removeAll { $0.id == id }
-    }
-    
-    func recalculateNutrition() {
-        guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
-        
-        isRecalculatingNutrition = true
-        
-        // Combine visible and hidden ingredients
-        let allIngredients = editedVisibleIngredients + editedHiddenIngredients
-        let ingredientsList = allIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
-        
-        NetworkManager.shared.recalculateNutrition(
-            ingredients: ingredientsList,
-            userId: userId
-        ) { result in
-            self.isRecalculatingNutrition = false
-            
-            switch result {
-            case .success(let nutritionData):
-                self.updatedNutritionInfo = nutritionData.nutrition_info
-                
-            case .failure(let error):
-                print("❌ Nutrition recalculation failed: \(error)")
-                // Keep existing nutrition info if recalculation fails
-            }
-        }
-    }
-    
-    func saveChanges() {
-        isSaving = true
-        
-        // Update meal data
-        meal.dish_prediction = editedDishName
-        meal.image_description = editedVisibleIngredients.map {
-            "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
-        }.joined(separator: "\n")
-        
-        // Update hidden ingredients
-        let hiddenIngredientsString = editedHiddenIngredients.map {
-            "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
-        }.joined(separator: "\n")
-        
-        // Update nutrition if recalculated
-        if !updatedNutritionInfo.isEmpty {
-            meal.nutrition_info = updatedNutritionInfo
-        }
-        
-        updateMealInBackend(hiddenIngredients: hiddenIngredientsString)
-    }
-    
-    func updateMealInBackend(hiddenIngredients: String) {
-        // Create payload with all updated data
-        let payload: [String: Any] = [
-            "meal_id": meal._id,
-            "dish_prediction": meal.dish_prediction,
-            "image_description": meal.image_description,
-            "hidden_ingredients": hiddenIngredients,
-            "nutrition_info": updatedNutritionInfo.isEmpty ? meal.nutrition_info : updatedNutritionInfo,
-            "meal_type": meal.meal_type ?? "Lunch"
-        ]
-        
-        guard let url = URL(string: "https://food-app-2yra.onrender.com/update-meal"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            self.isSaving = false
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                self.isSaving = false
-                
-                if let error = error {
-                    print("❌ Update error: \(error)")
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    // Update the meal object with hidden ingredients
-                    self.meal.hidden_ingredients = hiddenIngredients
-                    self.isEditing = false
-                    NotificationCenter.default.post(name: Notification.Name("MealUpdated"), object: nil)
-                } else {
-                    print("❌ Update failed with status code")
-                }
-            }
-        }.resume()
-    }
-    
     func deleteMeal() {
         isDeleting = true
-        
-        NetworkManager.shared.deleteMeal(mealId: meal._id) { success in
+
+        NetworkManager.shared.deleteMeal(mealId: meal.id) { success in
             self.isDeleting = false
             if success {
                 NotificationCenter.default.post(name: Notification.Name("MealDeleted"), object: nil)
@@ -538,29 +85,6 @@ struct MealDetailView: View {
         guard let data = Data(base64Encoded: base64),
               let image = UIImage(data: data) else { return nil }
         return image
-    }
-
-    func parseIngredientsToEditable(from text: String) -> [EditableIngredient] {
-        text.split(separator: "\n").compactMap { line in
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: CharacterSet.whitespaces) }
-            guard parts.count >= 3 else { return nil }
-            return EditableIngredient(
-                id: UUID().uuidString,
-                name: parts[0],
-                quantity: parts[1],
-                unit: parts[2]
-            )
-        }
-    }
-    
-    func extractCalories(from text: String) -> Int? {
-        for line in text.split(separator: "\n") {
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: CharacterSet.whitespaces) }
-            if parts.count >= 2, parts[0].lowercased().contains("calories") {
-                return Int(parts[1])
-            }
-        }
-        return nil
     }
 }
 
@@ -613,59 +137,21 @@ struct InfoPill: View {
 }
 
 struct NutritionOverviewCard: View {
-    let nutritionInfo: String
-    
-    var nutritionData: [(String, String, Color)] {
-        var data: [(String, String, Color)] = []
-        
-        for line in nutritionInfo.split(separator: "\n") {
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: CharacterSet.whitespaces) }
-            if parts.count >= 2 {
-                let nutrient = parts[0]
-                let value = parts[1]
-                let unit = parts.count > 2 ? parts[2] : ""
-                
-                var color: Color = .gray
-                if nutrient.lowercased().contains("protein") { color = .blue }
-                else if nutrient.lowercased().contains("carb") { color = .orange }
-                else if nutrient.lowercased().contains("fat") { color = .purple }
-                else if nutrient.lowercased().contains("calories") { color = .red }
-                
-                data.append((nutrient, "\(value) \(unit)", color))
-            }
-        }
-        
-        return data
-    }
-    
+    let nutrition: NutritionFacts
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Nutrition Facts")
                 .font(.headline)
                 .foregroundColor(.white)
-            
+
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                ForEach(nutritionData.prefix(4), id: \.0) { item in
-                    HStack {
-                        Circle()
-                            .fill(item.2.opacity(0.2))
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Image(systemName: getNutrientIcon(item.0))
-                                    .foregroundColor(item.2)
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.1)
-                                .font(.subheadline.bold())
-                                .foregroundColor(.white)
-                            Text(item.0)
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        
-                        Spacer()
-                    }
+                NutritionRow(icon: "flame.fill", label: "Calories", value: "\(Int(nutrition.calories)) kcal", color: .red)
+                NutritionRow(icon: "flame.fill", label: "Protein", value: "\(Int(nutrition.protein)) g", color: .blue)
+                NutritionRow(icon: "leaf.fill", label: "Carbs", value: "\(Int(nutrition.carbs)) g", color: .orange)
+                NutritionRow(icon: "drop.fill", label: "Fat", value: "\(Int(nutrition.fat)) g", color: .purple)
+                if let fiber = nutrition.fiber {
+                    NutritionRow(icon: "scalemass", label: "Fiber", value: "\(Int(fiber)) g", color: .green)
                 }
             }
         }
@@ -679,15 +165,38 @@ struct NutritionOverviewCard: View {
                 )
         )
     }
-    
-    func getNutrientIcon(_ nutrient: String) -> String {
-        if nutrient.lowercased().contains("protein") { return "flame.fill" }
-        else if nutrient.lowercased().contains("carb") { return "leaf.fill" }
-        else if nutrient.lowercased().contains("fat") { return "drop.fill" }
-        else if nutrient.lowercased().contains("calories") { return "flame.fill" }
-        else { return "circle.fill" }
+
+    struct NutritionRow: View {
+        let icon: String
+        let label: String
+        let value: String
+        let color: Color
+
+        var body: some View {
+            HStack {
+                Circle()
+                    .fill(color.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: icon)
+                            .foregroundColor(color)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(value)
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                    Text(label)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+
+                Spacer()
+            }
+        }
     }
 }
+
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
@@ -697,4 +206,174 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct BackgroundGradient: View {
+    var body: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.black,
+                Color.black.opacity(0.95),
+                Color(red: 0.1, green: 0.1, blue: 0.15)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+}
+
+struct MealImageSection: View {
+    let meal: Meal
+    @Binding var showShareSheet: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if let base64 = meal.image_full, let uiImage = decodeBase64ToUIImage(base64) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 350)
+                    .clipped()
+            } else {
+                Rectangle()
+                    .fill(LinearGradient(
+                        gradient: Gradient(colors: [.orange.opacity(0.4), .orange.opacity(0.2)]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .frame(height: 350)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .font(.system(size: 60))
+                            .foregroundColor(.white.opacity(0.5))
+                    )
+            }
+
+            LinearGradient(
+                gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.7), Color.black.opacity(0.9)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 150)
+        }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 12) {
+                ActionButton(icon: "square.and.arrow.up") {
+                    showShareSheet = true
+                }
+                ActionButton(icon: "heart") {
+                    // Add to favorites logic
+                }
+            }
+            .padding()
+            .padding(.top, 50)
+        }
+    }
+}
+
+struct TitleAndMetaSection: View {
+    let meal: Meal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(meal.dish_name)
+                .font(.title2.bold())
+                .foregroundColor(.white)
+
+            HStack(spacing: 20) {
+                if let savedAt = meal.saved_at,
+                   let date = ISO8601DateFormatter().date(from: savedAt) {
+                    InfoPill(icon: "calendar", text: formatDate(date), color: .blue)
+                }
+
+                if let mealType = meal.meal_type {
+                    InfoPill(icon: "fork.knife", text: mealType, color: .purple)
+                }
+
+                Label("\(meal.nutrition_facts.calories, specifier: "%.0f") kcal", systemImage: "flame.fill")
+                    .font(.subheadline)
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+}
+
+struct NutritionFactsSection: View {
+    let meal: Meal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SectionHeader(title: "Nutrition Facts", icon: "chart.bar.fill", color: .orange)
+
+            ForEach(meal.nutrition_facts.asDictionary.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                HStack {
+                    Text(key)
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(String(format: "%.0f", value))
+                        .foregroundColor(.orange)
+                }
+                .padding(.vertical, 4)
+            }
+
+        }
+    }
+}
+
+struct IngredientListSection: View {
+    let meal: Meal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SectionHeader(title: "Ingredients", icon: "leaf.fill", color: .green)
+
+            ForEach(meal.ingredient_list, id: \.self) { ingredient in
+                IngredientDisplay(text: ingredient)
+            }
+        }
+    }
+}
+
+struct DeleteButton: View {
+    @Binding var isDeleting: Bool
+    @Binding var showDeleteAlert: Bool
+    let deleteMeal: () -> Void
+
+    var body: some View {
+        Button(action: { showDeleteAlert = true }) {
+            HStack {
+                if isDeleting {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                } else {
+                    Image(systemName: "trash")
+                    Text("Delete")
+                }
+            }
+            .fontWeight(.semibold)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [.red, .red.opacity(0.8)]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(12)
+        }
+        .disabled(isDeleting)
+    }
+}
+func formatDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    return formatter.string(from: date)
+}
+
+func decodeBase64ToUIImage(_ base64: String) -> UIImage? {
+    guard let data = Data(base64Encoded: base64) else { return nil }
+    return UIImage(data: data)
 }

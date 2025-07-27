@@ -846,7 +846,7 @@ struct DashboardView: View {
                         ForEach(Array(meals.prefix(5))) { meal in
                             EnhancedMealCard(meal: meal)
                                 .onTapGesture {
-                                    print("🍽️ Meal tapped: \(meal.dish_prediction)")
+                                    print("🍽️ Meal tapped: \(meal.dish_name)")
                                     // Navigate to detail
                                 }
                         }
@@ -1032,7 +1032,7 @@ struct DashboardView: View {
     
     func fetchMeals() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-2yra.onrender.com/user-meals?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-recipe.onrender.com/user-meals?user_id=\(userId)") else {
             networkError = .noInternet
             return
         }
@@ -1091,7 +1091,7 @@ struct DashboardView: View {
     
     func fetchWaterData() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-2yra.onrender.com/user-water?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-recipe.onrender.com/user-water?user_id=\(userId)") else {
             return
         }
 
@@ -1120,7 +1120,7 @@ struct DashboardView: View {
     
     func fetchExerciseData() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-2yra.onrender.com/user-exercise?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-recipe.onrender.com/user-exercise?user_id=\(userId)") else {
             return
         }
 
@@ -1149,7 +1149,7 @@ struct DashboardView: View {
     
     func fetchWeightData() {
         guard let userId = getCurrentUserId(),
-              let url = URL(string: "https://food-app-2yra.onrender.com/user-weight?user_id=\(userId)") else {
+              let url = URL(string: "https://food-app-recipe.onrender.com/user-weight?user_id=\(userId)") else {
             return
         }
 
@@ -1198,28 +1198,28 @@ struct DashboardView: View {
                 continue
             }
             
-            let mealCalories = extractCalories(from: meal.nutrition_info) ?? 0
-            let mealProtein = extractNutrient(name: "protein", from: meal.nutrition_info) ?? 0
-            let mealCarbs = extractNutrient(name: "carbohydrates", from: meal.nutrition_info) ?? 0
-            let mealFat = extractNutrient(name: "fat", from: meal.nutrition_info) ?? 0
-            let mealFiber = extractNutrient(name: "fiber", from: meal.nutrition_info) ?? 0
-            let mealSugar = extractNutrient(name: "sugar", from: meal.nutrition_info) ?? 0
-            let mealSodium = extractNutrient(name: "sodium", from: meal.nutrition_info) ?? 0
-            
+            let mealCalories = meal.nutrition_facts.calories
+            let mealProtein = meal.nutrition_facts.protein
+            let mealCarbs = meal.nutrition_facts.carbs
+            let mealFat = meal.nutrition_facts.fat
+            let mealFiber = meal.nutrition_facts.fiber ?? 0
+            let mealSugar = meal.nutrition_facts.sugar ?? 0
+            let mealSodium = meal.nutrition_facts.sodium ?? 0
+
             // Today's stats
             if calendar.isDate(mealDate, inSameDayAs: today) {
-                todayCalories += mealCalories
-                todayProtein += mealProtein
-                todayCarbs += mealCarbs
-                todayFat += mealFat
-                todayFiber += mealFiber
-                todaySugar += mealSugar
-                todaySodium += mealSodium
+                todayCalories += Int(mealCalories)
+                todayProtein += Int(mealProtein)
+                todayCarbs += Int(mealCarbs)
+                todayFat += Int(mealFat)
+                todayFiber += Int(mealFiber)
+                todaySugar += Int(mealSugar)
+                todaySodium += Int(mealSodium)
             }
             
             // Monthly stats
             if mealDate >= startOfMonth {
-                monthlyCalories += mealCalories
+                monthlyCalories += Int(mealCalories)
                 let dayKey = calendar.dateComponents([.year, .month, .day], from: mealDate)
                 monthlyDaysWithMeals.insert("\(dayKey.year!)-\(dayKey.month!)-\(dayKey.day!)")
             }
@@ -1631,17 +1631,17 @@ struct EnhancedMealCard: View {
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(meal.dish_prediction)
+                Text(meal.dish_name)
                     .font(.subheadline.bold())
                     .foregroundColor(.white)
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
-                    if let calories = extractCalories(from: meal.nutrition_info) {
-                        Text("\(calories) kcal")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
+                    Label("\(meal.nutrition_facts.calories, specifier: "%.0f") kcal", systemImage: "flame.fill")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+
+
                     
                     if let mealType = meal.meal_type {
                         Text("•")

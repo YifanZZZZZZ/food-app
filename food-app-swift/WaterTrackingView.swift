@@ -1,6 +1,6 @@
 //
 //  WaterTrackingView.swift
-//  food-app-2yra
+//  food-app-recipe
 //
 //  Created by Utsav Doshi on 7/16/25.
 //
@@ -346,7 +346,7 @@ struct WaterTrackingView: View {
     func fetchWaterData() {
         guard let userId = getCurrentUserId() else { return }
         
-        guard let url = URL(string: "https://food-app-2yra.onrender.com/user-water?user_id=\(userId)") else { return }
+        guard let url = URL(string: "https://food-app-recipe.onrender.com/user-water?user_id=\(userId)") else { return }
         
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -390,7 +390,7 @@ struct WaterTrackingView: View {
         
         guard let userId = getCurrentUserId() else { return }
         
-        guard let url = URL(string: "https://food-app-2yra.onrender.com/add-water") else { return }
+        guard let url = URL(string: "https://food-app-recipe.onrender.com/add-water") else { return }
         
         isLoading = true
         

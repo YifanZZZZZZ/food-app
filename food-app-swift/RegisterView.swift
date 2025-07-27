@@ -308,7 +308,7 @@ struct RegisterView: View {
         isLoading = true
         registrationFailed = false
         
-        guard let url = URL(string: "https://food-app-2yra.onrender.com/register") else { return }
+        guard let url = URL(string: "https://food-app-recipe.onrender.com/register") else { return }
 
         let payload = ["name": name, "email": email, "password": password]
         var request = URLRequest(url: url)

@@ -1,6 +1,6 @@
 //
 //  ProfileManager.swift
-//  food-app-2yra
+//  food-app-recipe
 //
 //  Created by Utsav Doshi on 7/13/25.
 //
@@ -16,7 +16,7 @@ class ProfileManager: ObservableObject {
     @Published var lastSyncDate: Date?
     @Published var errorMessage: String?
     
-    private let baseURL = "https://food-app-2yra.onrender.com"
+    private let baseURL = "https://food-app-recipe.onrender.com"
     private var cancellables = Set<AnyCancellable>()
     private var currentFetchTask: URLSessionDataTask?
     private var retryCount = 0

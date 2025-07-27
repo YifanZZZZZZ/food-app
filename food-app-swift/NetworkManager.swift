@@ -3,7 +3,7 @@ import Foundation
 class NetworkManager {
     static let shared = NetworkManager()
     
-    private let baseURL = "https://food-app-2yra.onrender.com"
+    private let baseURL = "https://food-app-recipe.onrender.com"
     
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -54,7 +54,7 @@ class NetworkManager {
         }.resume()
     }
     
-    func uploadImage(imageData: Data, userId: String, completion: @escaping (Result<GeminiResult, Error>) -> Void) {
+    func uploadImage(imageData: Data, userId: String, completion: @escaping (Result<Meal, Error>) -> Void) {
         guard let url = URL(string: "\(baseURL)/analyze") else {
             completion(.failure(NSError(domain: "NetworkManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
@@ -98,19 +98,16 @@ class NetworkManager {
                 
                 if let httpResponse = response as? HTTPURLResponse {
                     print("📡 Response status: \(httpResponse.statusCode)")
-
-                    // 1️⃣ Check for empty data
+                    
                     if data.isEmpty {
                         print("🛑 Empty response body received from server.")
                         completion(.failure(NSError(domain: "API", code: -10, userInfo: [NSLocalizedDescriptionKey: "Server returned no data."])))
                         return
                     }
-
-                    // 2️⃣ Try to print UTF-8 response (might be HTML or JSON)
+                    
                     if let responseString = String(data: data, encoding: .utf8) {
                         print("🧾 Raw response (utf8):\n\(responseString)")
-
-                        // 3️⃣ Quick validation: is it valid JSON?
+                        
                         if responseString.trimmingCharacters(in: .whitespacesAndNewlines).first != "{" {
                             print("⚠️ Warning: Response is not valid JSON. Possibly HTML or truncated.")
                         }
@@ -119,14 +116,11 @@ class NetworkManager {
                         print("🧾 Raw base64:", data.base64EncodedString())
                     }
                 }
-
-
                 
                 do {
-                    let result = try JSONDecoder().decode(GeminiResult.self, from: data)
+                    let result = try JSONDecoder().decode(Meal.self, from: data)
                     completion(.success(result))
                 } catch {
-                    // Try to decode error response
                     if let errorDict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                        let errorMsg = errorDict["error"] {
                         completion(.failure(NSError(domain: "API", code: -3, userInfo: [NSLocalizedDescriptionKey: errorMsg])))
@@ -134,82 +128,6 @@ class NetworkManager {
                         print("❌ Decode error: \(error)")
                         completion(.failure(error))
                     }
-                }
-            }
-        }.resume()
-    }
-    
-    func recalculateNutrition(ingredients: String, userId: String, completion: @escaping (Result<NutritionRecalculationResult, Error>) -> Void) {
-        guard let url = URL(string: "\(baseURL)/recalculate-nutrition") else {
-            completion(.failure(NSError(domain: "NetworkManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
-            return
-        }
-        
-        let payload: [String: Any] = [
-            "ingredients": ingredients,
-            "user_id": userId
-        ]
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            completion(.failure(NSError(domain: "NetworkManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to encode data"])))
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        session.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    completion(.failure(error))
-                    return
-                }
-                
-                guard let data = data else {
-                    completion(.failure(NSError(domain: "NetworkManager", code: -3, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
-                    return
-                }
-                
-                do {
-                    let result = try JSONDecoder().decode(NutritionRecalculationResult.self, from: data)
-                    completion(.success(result))
-                } catch {
-                    completion(.failure(error))
-                }
-            }
-        }.resume()
-    }
-    
-    func updateMeal(mealId: String, dishName: String, ingredients: String, completion: @escaping (Bool) -> Void) {
-        guard let url = URL(string: "\(baseURL)/update-meal") else {
-            completion(false)
-            return
-        }
-        
-        let payload: [String: Any] = [
-            "meal_id": mealId,
-            "dish_prediction": dishName,
-            "image_description": ingredients
-        ]
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            completion(false)
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        session.dataTask(with: request) { _, response, _ in
-            DispatchQueue.main.async {
-                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                    completion(true)
-                } else {
-                    completion(false)
                 }
             }
         }.resume()
@@ -242,4 +160,53 @@ class NetworkManager {
             }
         }.resume()
     }
+    
+    func saveMeal(meal: MealUploadRequest, completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "\(baseURL)/save-meal") else {
+            print("❌ Invalid URL")
+            completion(false)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            let jsonData = try JSONEncoder().encode(meal)
+            request.httpBody = jsonData
+            print("📦 Sending meal JSON to \(url.absoluteString)")
+        } catch {
+            print("❌ JSON encoding failed:", error.localizedDescription)
+            completion(false)
+            return
+        }
+
+        session.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Network error:", error.localizedDescription)
+                    completion(false)
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid HTTP response")
+                    completion(false)
+                    return
+                }
+
+                if httpResponse.statusCode == 200 {
+                    print("✅ Meal saved successfully")
+                    completion(true)
+                } else {
+                    if let data = data, let text = String(data: data, encoding: .utf8) {
+                        print("❌ Server error: \(text)")
+                    }
+                    completion(false)
+                }
+            }
+        }.resume()
+    }
+
 }

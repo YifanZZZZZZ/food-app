@@ -5,13 +5,11 @@ struct UploadMealView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isLoading = false
+    @State private var isSaving: Bool = false
+
     @State private var detectedDish: String = ""
-    @State private var editableDishName: String = ""
-    @State private var visibleIngredients: [EditableIngredient] = []
-    @State private var hiddenIngredients: [EditableIngredient] = []
-    @State private var nutritionLines: [String] = []
-    @State private var rawNutritionInfo: String = ""
-    @State private var rawHiddenIngredients: String = ""
+    @State private var ingredientList: [String] = []
+    @State private var nutritionMap: [String: Double] = [:]
     @State private var calories: Int?
     @State private var showToast = false
     @State private var errorMessage = ""
@@ -19,8 +17,6 @@ struct UploadMealView: View {
     
     @State private var selectedDate = Date()
     @State private var selectedMealType = "Lunch"
-    @State private var isEditingIngredients = false
-    @State private var isEditingHidden = false
     @State private var showDatePicker = false
     @State private var showCamera = false
     @State private var analysisStep = 0 // 0: select, 1: analyzing, 2: results
@@ -28,7 +24,7 @@ struct UploadMealView: View {
     let mealTypes = ["Breakfast", "Lunch", "Evening Snacks", "Dinner"]
     
     @Environment(\.dismiss) var dismiss
-
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -43,7 +39,7 @@ struct UploadMealView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
-
+                
                 ScrollView {
                     VStack(spacing: 24) {
                         // Header
@@ -68,7 +64,7 @@ struct UploadMealView: View {
                         }
                         .padding(.horizontal)
                         .padding(.top, 20)
-
+                        
                         if selectedImage == nil {
                             // Image Selection
                             VStack(spacing: 20) {
@@ -188,9 +184,7 @@ struct UploadMealView: View {
                                         Button(action: {
                                             selectedImage = nil
                                             detectedDish = ""
-                                            visibleIngredients = []
-                                            hiddenIngredients = []
-                                            nutritionLines = []
+                                            ingredientList = []
                                         }) {
                                             HStack(spacing: 4) {
                                                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -213,10 +207,13 @@ struct UploadMealView: View {
                                 }
                             }
                             .padding(.horizontal)
-
+                            
                             if isLoading {
                                 AnalyzingView()
-                            } else if !errorMessage.isEmpty {
+                            } else if isSaving {
+                                SavingView()
+                            }
+                            else if !errorMessage.isEmpty {
                                 ErrorView(message: errorMessage, retry: analyzeImage)
                                     .padding(.horizontal)
                             } else if !detectedDish.isEmpty {
@@ -229,7 +226,7 @@ struct UploadMealView: View {
                                             .foregroundColor(.gray)
                                             .tracking(1)
                                         
-                                        TextField("Dish name", text: $editableDishName)
+                                        TextField("Dish name", text: $detectedDish)
                                             .font(.title3.bold())
                                             .foregroundColor(.white)
                                             .padding()
@@ -251,121 +248,54 @@ struct UploadMealView: View {
                                     }
                                     .padding(.horizontal)
                                     
-                                    // Visible Ingredients Section
-                                    VStack(alignment: .leading, spacing: 16) {
-                                        SectionHeader(
-                                            title: "Visible Ingredients",
-                                            icon: "leaf.fill",
-                                            color: Color.green,
-                                            action: { isEditingIngredients.toggle() },
-                                            actionIcon: isEditingIngredients ? "checkmark" : "pencil"
-                                        )
-                                        
-                                        VStack(spacing: 12) {
-                                            ForEach($visibleIngredients) { $ingredient in
-                                                if isEditingIngredients {
-                                                    EditableIngredientRow(
-                                                        ingredient: $ingredient,
-                                                        onDelete: { removeVisibleIngredient(id: ingredient.id) }
-                                                    )
-                                                } else {
-                                                    IngredientDisplay(
-                                                        text: "\(ingredient.name) — \(ingredient.quantity) \(ingredient.unit)"
-                                                    )
-                                                }
-                                            }
-                                            
-                                            if isEditingIngredients {
-                                                Button(action: addNewVisibleIngredient) {
-                                                    HStack {
-                                                        Image(systemName: "plus.circle.fill")
-                                                        Text("Add Ingredient")
-                                                    }
-                                                    .font(.subheadline)
-                                                    .foregroundColor(Color.green)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal)
                                     
-                                    // Hidden Ingredients Section
-                                    if !hiddenIngredients.isEmpty {
+                                    // Ingredients
+                                    if !ingredientList.isEmpty {
                                         VStack(alignment: .leading, spacing: 16) {
                                             SectionHeader(
-                                                title: "Hidden Ingredients",
+                                                title: "Ingredients",
                                                 icon: "eye.slash.fill",
                                                 color: Color.pink,
-                                                action: { isEditingHidden.toggle() },
-                                                actionIcon: isEditingHidden ? "checkmark" : "pencil"
                                             )
                                             
                                             VStack(spacing: 12) {
-                                                ForEach($hiddenIngredients) { $ingredient in
-                                                    if isEditingHidden {
-                                                        EditableIngredientRow(
-                                                            ingredient: $ingredient,
-                                                            onDelete: { removeHiddenIngredient(id: ingredient.id) }
-                                                        )
-                                                    } else {
-                                                        IngredientDisplay(
-                                                            text: "\(ingredient.name) — \(ingredient.quantity) \(ingredient.unit)",
-                                                            isHidden: true
-                                                        )
-                                                    }
+                                                ForEach(ingredientList, id: \.self) { ingredient in
+                                                    IngredientDisplay(text: ingredient)
                                                 }
                                                 
-                                                if isEditingHidden {
-                                                    Button(action: addNewHiddenIngredient) {
-                                                        HStack {
-                                                            Image(systemName: "plus.circle.fill")
-                                                            Text("Add Hidden Ingredient")
-                                                        }
-                                                        .font(.subheadline)
-                                                        .foregroundColor(Color.pink)
-                                                    }
-                                                }
                                             }
+                                            
                                         }
                                         .padding(.horizontal)
                                     }
                                     
                                     // Nutrition Info
+                                    // Haven't debug
                                     NutritionCard(
-                                        nutritionLines: nutritionLines,
+                                        nutritionMap: nutritionMap,
                                         calories: calories,
-                                        onRecalculate: (isEditingIngredients || isEditingHidden) ? recalculateNutrition : nil
                                     )
                                     .padding(.horizontal)
                                     
-                                    // Save Button
-                                    Button(action: saveMealToBackend) {
-                                        HStack {
-                                            Image(systemName: "checkmark.circle.fill")
-                                            Text("Save to Diary")
-                                        }
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 16)
-                                        .background(
-                                            LinearGradient(
-                                                gradient: Gradient(colors: [Color.green, Color.green.opacity(0.8)]),
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .cornerRadius(12)
-                                        .shadow(color: Color.green.opacity(0.3), radius: 8, x: 0, y: 4)
+                                    
+                                    Button(action: saveMeal) {
+                                        Text("Add Meal")
+                                            .font(.headline)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                            .background(Color.green)
+                                            .cornerRadius(12)
                                     }
                                     .padding(.horizontal)
-                                    .padding(.bottom, 40)
+                                    .padding(.bottom, 32)
                                 }
                             }
                         }
                     }
                 }
-
+                
                 // Success Toast
                 if showToast {
                     VStack {
@@ -397,285 +327,149 @@ struct UploadMealView: View {
             }
         }
     }
-    
-    // Helper functions
-    
-    func removeVisibleIngredient(id: String) {
-        visibleIngredients.removeAll { $0.id == id }
-    }
-    
-    func removeHiddenIngredient(id: String) {
-        hiddenIngredients.removeAll { $0.id == id }
-    }
-    
-    func addNewVisibleIngredient() {
-        visibleIngredients.append(EditableIngredient(
-            id: UUID().uuidString,
-            name: "New Ingredient",
-            quantity: "1",
-            unit: "piece"
-        ))
-    }
-    
-    func addNewHiddenIngredient() {
-        hiddenIngredients.append(EditableIngredient(
-            id: UUID().uuidString,
-            name: "New Hidden Ingredient",
-            quantity: "1",
-            unit: "tsp"
-        ))
-    }
-    
-    func recalculateNutrition() {
-        guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
         
-        isLoading = true
-        
-        // Combine visible and hidden ingredients for recalculation
-        let allIngredients = visibleIngredients + hiddenIngredients
-        let ingredientsList = allIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
-        
-        NetworkManager.shared.recalculateNutrition(
-            ingredients: ingredientsList,
-            userId: userId
-        ) { result in
-            self.isLoading = false
+        func resizeImage(_ image: UIImage, maxDimension: CGFloat = 800) -> UIImage? {
+            let size = image.size
             
-            switch result {
-            case .success(let nutritionData):
-                self.nutritionLines = self.parseNutritionLines(from: nutritionData.nutrition_info)
-                self.calories = self.extractCalories(from: nutritionData.nutrition_info)
-                self.rawNutritionInfo = nutritionData.nutrition_info
-                
-            case .failure(_):
-                self.errorMessage = "Failed to recalculate nutrition"
-            }
-        }
-    }
-
-    func resizeImage(_ image: UIImage, maxDimension: CGFloat = 800) -> UIImage? {
-        let size = image.size
-        
-        var newSize: CGSize
-        if size.width > size.height {
-            if size.width > maxDimension {
-                newSize = CGSize(width: maxDimension, height: size.height * maxDimension / size.width)
-            } else {
-                return image
-            }
-        } else {
-            if size.height > maxDimension {
-                newSize = CGSize(width: size.width * maxDimension / size.height, height: maxDimension)
-            } else {
-                return image
-            }
-        }
-        
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        
-        return resizedImage
-    }
-    
-    func compressImage(_ image: UIImage, maxSizeKB: Int = 500) -> Data? {
-        var compression: CGFloat = 0.7
-        var imageData = image.jpegData(compressionQuality: compression)
-        
-        while let data = imageData,
-              data.count > maxSizeKB * 1024 && compression > 0.1 {
-            compression -= 0.1
-            imageData = image.jpegData(compressionQuality: compression)
-        }
-        
-        return imageData
-    }
-
-    func analyzeImage() {
-        guard let image = selectedImage else { return }
-        isLoading = true
-        errorMessage = ""
-        
-        NetworkManager.shared.checkHealth { isHealthy, status in
-            if !isHealthy {
-                self.isLoading = false
-                self.errorMessage = "Server is not responding. Please try again later."
-                return
-            }
-            
-            self.performImageAnalysis(image: image)
-        }
-    }
-
-    func performImageAnalysis(image: UIImage) {
-        detectedDish = ""
-        editableDishName = ""
-        visibleIngredients = []
-        hiddenIngredients = []
-        nutritionLines = []
-        calories = nil
-        
-        let resizedImage = resizeImage(image, maxDimension: 800) ?? image
-        guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
-            isLoading = false
-            errorMessage = "Failed to process image."
-            return
-        }
-        
-        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
-        if userId.isEmpty {
-            isLoading = false
-            errorMessage = "Login session missing. Please log in again."
-            return
-        }
-        
-        NetworkManager.shared.uploadImage(imageData: imageData, userId: userId) { result in
-            self.isLoading = false
-            
-            switch result {
-            case .success(let geminiResult):
-                withAnimation(.spring()) {
-                    self.detectedDish = geminiResult.dish_prediction
-                    self.editableDishName = geminiResult.dish_prediction
-                    self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
-                    
-                    // Parse hidden ingredients
-                    if let hiddenText = geminiResult.hidden_ingredients, !hiddenText.isEmpty {
-                        self.hiddenIngredients = self.parseIngredientsToEditable(from: hiddenText)
-                        self.rawHiddenIngredients = hiddenText
-                        print("🔍 Hidden ingredients parsed: \(self.hiddenIngredients.count) items")
-                    } else {
-                        print("⚠️ No hidden ingredients received")
-                        self.hiddenIngredients = []
-                        self.rawHiddenIngredients = ""
-                    }
-                    
-                    self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
-                    self.calories = self.extractCalories(from: geminiResult.nutrition_info)
-                    self.rawNutritionInfo = geminiResult.nutrition_info
-                }
-                
-            case .failure(let error):
-                if (error as NSError).code == NSURLErrorTimedOut {
-                    self.errorMessage = "Analysis timed out. Try a clearer image."
+            var newSize: CGSize
+            if size.width > size.height {
+                if size.width > maxDimension {
+                    newSize = CGSize(width: maxDimension, height: size.height * maxDimension / size.width)
                 } else {
-                    self.errorMessage = error.localizedDescription
+                    return image
+                }
+            } else {
+                if size.height > maxDimension {
+                    newSize = CGSize(width: size.width * maxDimension / size.height, height: maxDimension)
+                } else {
+                    return image
                 }
             }
-        }
-    }
-
-    func saveMealToBackend() {
-        guard !editableDishName.isEmpty else {
-            errorMessage = "Please enter a dish name"
-            return
+            
+            UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+            let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+            
+            return resizedImage
         }
         
-        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
-        if userId.isEmpty {
-            errorMessage = "Login session missing."
-            return
+        func compressImage(_ image: UIImage, maxSizeKB: Int = 500) -> Data? {
+            var compression: CGFloat = 0.7
+            var imageData = image.jpegData(compressionQuality: compression)
+            
+            while let data = imageData,
+                  data.count > maxSizeKB * 1024 && compression > 0.1 {
+                compression -= 0.1
+                imageData = image.jpegData(compressionQuality: compression)
+            }
+            
+            return imageData
         }
-
-        let fullImageData = compressImage(selectedImage!, maxSizeKB: 1000)
-        let thumbnailData = compressImage(selectedImage!, maxSizeKB: 100)
         
-        let fullImageBase64 = fullImageData?.base64EncodedString() ?? ""
-        let thumbnailBase64 = thumbnailData?.base64EncodedString() ?? ""
-        
-        let visibleIngredientsString = visibleIngredients.map {
-            "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
-        }.joined(separator: "\n")
-        
-        let hiddenIngredientsString = hiddenIngredients.map {
-            "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
-        }.joined(separator: "\n")
-
-        let payload: [String: Any] = [
-            "user_id": userId,
-            "dish_prediction": editableDishName,
-            "image_description": visibleIngredientsString,
-            "hidden_ingredients": hiddenIngredientsString,
-            "nutrition_info": rawNutritionInfo,
-            "image_full": fullImageBase64,
-            "image_thumb": thumbnailBase64,
-            "meal_type": selectedMealType,
-            "saved_at": ISO8601DateFormatter().string(from: selectedDate)
-        ]
-
-        guard let url = URL(string: "https://food-app-2yra.onrender.com/save-meal"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            errorMessage = "Failed to prepare meal data"
-            return
-        }
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        let session = URLSession(configuration: config)
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-
-        session.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if error != nil {
-                    self.errorMessage = "Failed to save meal"
+        func analyzeImage() {
+            guard let image = selectedImage else { return }
+            isLoading = true
+            errorMessage = ""
+            
+            NetworkManager.shared.checkHealth { isHealthy, status in
+                if !isHealthy {
+                    self.isLoading = false
+                    self.errorMessage = "Server is not responding. Please try again later."
                     return
                 }
                 
-                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                    NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
+                self.performImageAnalysis(image: image)
+            }
+        }
+        
+        func performImageAnalysis(image: UIImage) {
+            detectedDish = ""
+            ingredientList = []
+            nutritionMap = [:]
+            calories = nil
+            
+            let resizedImage = resizeImage(image, maxDimension: 800) ?? image
+            guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
+                isLoading = false
+                errorMessage = "Failed to process image."
+                return
+            }
+            
+            let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
+            if userId.isEmpty {
+                isLoading = false
+                errorMessage = "Login session missing. Please log in again."
+                return
+            }
+            
+            NetworkManager.shared.uploadImage(imageData: imageData, userId: userId) { result in
+                self.isLoading = false
+                
+                //debug
+                switch result {
+                case .success(let meal):
                     withAnimation(.spring()) {
-                        self.showToast = true
+                        self.detectedDish = meal.dish_name
+                        self.ingredientList = meal.ingredient_list
+                        self.nutritionMap = meal.nutrition_facts.asDictionary
+                        self.calories = Int(meal.nutrition_facts.calories)
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        self.dismiss()
+                    
+                case .failure(let error):
+                    if (error as NSError).code == NSURLErrorTimedOut {
+                        self.errorMessage = "Analysis timed out. Try a clearer image."
+                    } else {
+                        self.errorMessage = error.localizedDescription
                     }
-                } else {
-                    self.errorMessage = "Failed to save meal. Please try again."
                 }
             }
-        }.resume()
-    }
+        }
     
-    func parseIngredientsToEditable(from text: String) -> [EditableIngredient] {
-        text.split(separator: "\n").compactMap { line in
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count >= 3 else { return nil }
-            return EditableIngredient(
-                id: UUID().uuidString,
-                name: parts[0],
-                quantity: parts[1],
-                unit: parts[2]
+        func saveMeal() {
+            print("✅ Add Meal tapped")
+
+            guard let image = selectedImage,
+                  let fullData = image.jpegData(compressionQuality: 0.8),
+                  let thumbData = image.jpegData(compressionQuality: 0.2) else {
+                errorMessage = "Missing or invalid image."
+                return
+            }
+
+            let base64Full = fullData.base64EncodedString()
+            let base64Thumb = thumbData.base64EncodedString()
+
+            let newMeal = MealUploadRequest(
+                user_id: UserDefaults.standard.string(forKey: "user_id") ?? "unknown",
+                dish_name: detectedDish,
+                ingredient_list: ingredientList,
+                nutrition_facts: nutritionMap,
+                meal_type: selectedMealType,
+                saved_at: ISO8601DateFormatter().string(from: selectedDate),
+                image_full: base64Full,
+                image_thumb: base64Thumb
             )
-        }
-    }
 
-    func parseNutritionLines(from text: String) -> [String] {
-        text.split(separator: "\n").compactMap { line in
-            let parts = line.split(separator: "|")
-            guard parts.count >= 2 else { return nil }
-            let nutrient = parts[0].trimmingCharacters(in: .whitespaces)
-            let value = parts[1].trimmingCharacters(in: .whitespaces)
-            let unit = parts.count > 2 ? parts[2].trimmingCharacters(in: .whitespaces) : ""
-            return "\(nutrient) — \(value) \(unit)"
-        }
-    }
+            isSaving = true
 
-    func extractCalories(from text: String) -> Int? {
-        for line in text.split(separator: "\n") {
-            let parts = line.split(separator: "|")
-            if parts.count >= 2, parts[0].lowercased().contains("calories") {
-                return Int(parts[1].trimmingCharacters(in: .whitespaces))
+            NetworkManager.shared.saveMeal(meal: newMeal) { success in
+                isSaving = false
+                if success {
+                    showToast = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        showToast = false
+                        NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
+                        dismiss()
+                    }
+                }
+                else {
+                    errorMessage = "Failed to save meal. Please try again."
+                }
             }
         }
-        return nil
+
+
     }
-}
 
 // MARK: - Supporting Views
 
@@ -816,46 +610,36 @@ struct AnalyzingView: View {
     }
 }
 
+struct SavingView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .green))
+                .scaleEffect(1.5)
+            Text("Saving meal...")
+                .foregroundColor(.white)
+                .font(.headline)
+        }
+        .padding()
+    }
+}
+
+
 struct NutritionCard: View {
-    let nutritionLines: [String]
+    let nutritionMap: [String : Double]
     let calories: Int?
-    let onRecalculate: (() -> Void)?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "chart.pie.fill")
-                        .foregroundColor(Color.purple)
-                    
-                    Text("Nutrition Facts")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
+            HStack(spacing: 8) {
+                Image(systemName: "chart.pie.fill")
+                    .foregroundColor(Color.purple)
+                
+                Text("Nutrition Facts")
+                    .font(.headline)
+                    .foregroundColor(.white)
                 
                 Spacer()
-                
-                if let onRecalculate = onRecalculate {
-                    Button(action: onRecalculate) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("Recalculate")
-                        }
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color.purple)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(Color.purple.opacity(0.2))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.purple.opacity(0.3), lineWidth: 1)
-                                )
-                        )
-                    }
-                }
             }
             
             if let calories = calories {
@@ -887,17 +671,17 @@ struct NutritionCard: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(nutritionLines, id: \.self) { line in
-                    if !line.lowercased().contains("calories") {
+                ForEach(nutritionMap.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                    if key.lowercased() != "calories" {
                         HStack {
                             Circle()
                                 .fill(Color.purple.opacity(0.2))
                                 .frame(width: 8, height: 8)
-                            
-                            Text(line)
+
+                            Text("\(key): \(formatDouble(value))")
                                 .font(.subheadline)
                                 .foregroundColor(.white.opacity(0.9))
-                            
+
                             Spacer()
                         }
                     }
@@ -914,7 +698,12 @@ struct NutritionCard: View {
                 )
         )
     }
+    
+    func formatDouble(_ value: Double) -> String {
+        return String(format: "%.0f", value)
+    }
 }
+
 
 // Image Picker
 struct ImagePicker: UIViewControllerRepresentable {

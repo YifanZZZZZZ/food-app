@@ -14,7 +14,7 @@ struct MealHistoryView: View {
     var filteredMeals: [Meal] {
         meals.filter { meal in
             let matchesFilter = selectedFilter == "All" || meal.meal_type == selectedFilter
-            let matchesSearch = searchText.isEmpty || meal.dish_prediction.localizedCaseInsensitiveContains(searchText)
+            let matchesSearch = searchText.isEmpty || meal.dish_name.localizedCaseInsensitiveContains(searchText)
             return matchesFilter && matchesSearch
         }
     }
@@ -173,7 +173,6 @@ struct MealHistoryView: View {
     }
     
     // Components
-    
     func formatDateHeader(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) {
@@ -187,10 +186,11 @@ struct MealHistoryView: View {
         }
     }
 
+    
     func fetchMeals() {
         guard let userID = UserDefaults.standard.string(forKey: "user_id"),
               !userID.isEmpty,
-              let url = URL(string: "https://food-app-2yra.onrender.com/user-meals?user_id=\(userID)") else {
+              let url = URL(string: "https://food-app-recipe.onrender.com/user-meals?user_id=\(userID)") else {
             errorMessage = "Please log in to view meal history"
             return
         }
@@ -202,7 +202,7 @@ struct MealHistoryView: View {
             DispatchQueue.main.async {
                 self.isLoading = false
             }
-            
+
             if let error = error {
                 DispatchQueue.main.async {
                     self.errorMessage = "Network error: \(error.localizedDescription)"
@@ -216,20 +216,20 @@ struct MealHistoryView: View {
                 }
                 return
             }
-            
+
             do {
                 let decoded = try JSONDecoder().decode([Meal].self, from: data)
                 DispatchQueue.main.async {
                     var uniqueMeals: [Meal] = []
                     var seenTimestamps: Set<String> = []
-                    
+
                     for meal in decoded {
                         if let timestamp = meal.saved_at, !seenTimestamps.contains(timestamp) {
                             seenTimestamps.insert(timestamp)
                             uniqueMeals.append(meal)
                         }
                     }
-                    
+
                     self.meals = uniqueMeals.sorted { meal1, meal2 in
                         guard let date1 = ISO8601DateFormatter().date(from: meal1.saved_at ?? ""),
                               let date2 = ISO8601DateFormatter().date(from: meal2.saved_at ?? "") else {
@@ -237,10 +237,9 @@ struct MealHistoryView: View {
                         }
                         return date1 > date2
                     }
-                    
-                    self.totalCalories = self.meals.compactMap {
-                        extractCalories(from: $0.nutrition_info)
-                    }.reduce(0, +)
+
+                    // ✅ Use new `nutrition_facts.calories` field
+                    self.totalCalories = self.meals.reduce(0) { $0 + Int($1.nutrition_facts.calories) }
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -257,16 +256,6 @@ struct MealHistoryView: View {
                 continuation.resume()
             }
         }
-    }
-
-    func extractCalories(from text: String) -> Int? {
-        for line in text.split(separator: "\n") {
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-            if parts.count >= 2, parts[0].lowercased().contains("calories") {
-                return Int(parts[1])
-            }
-        }
-        return nil
     }
 }
 
@@ -362,18 +351,17 @@ struct MealHistoryCard: View {
             
             // Details
             VStack(alignment: .leading, spacing: 8) {
-                Text(meal.dish_prediction)
+                Text(meal.dish_name)
                     .font(.headline)
                     .foregroundColor(.white)
                     .lineLimit(1)
                 
                 HStack(spacing: 16) {
                     // Calories
-                    if let cal = extractCalories(from: meal.nutrition_info) {
-                        Label("\(cal) kcal", systemImage: "flame.fill")
-                            .font(.subheadline)
-                            .foregroundColor(.orange)
-                    }
+                    Label("\(meal.nutrition_facts.calories, specifier: "%.0f") kcal", systemImage: "flame.fill")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+
                     
                     // Meal Type
                     if let mealType = meal.meal_type {
