@@ -185,7 +185,7 @@ def get_profile():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/analyze", methods=["POST"])
-"your input fields"
+# "your input fields"
 def analyze():
     print("Nothing in analyze()")
     full_image_analysis()
