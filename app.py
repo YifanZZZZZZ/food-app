@@ -59,13 +59,9 @@ def health():
         # Check MongoDB connection
         client.admin.command('ping')
         
-        # Check Gemini API key
-        gemini_ok = bool(os.getenv("GEMINI_API_KEY"))
-        
         return jsonify({
             "status": "healthy",
             "mongodb": "connected",
-            "gemini": "configured" if gemini_ok else "missing API key",
             "analysis_mode": "working_web_app_based",
             "backend_version": "proven_stable",
             "timestamp": datetime.now().isoformat()
@@ -190,107 +186,7 @@ def get_profile():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    """Image analysis endpoint - using local model + CSV pipeline"""
-    try:
-        if "image" not in request.files:
-            return jsonify({"error": "No image part in the request"}), 400
-
-        image_file = request.files["image"]
-        user_id = request.form.get("user_id", "guest")
-
-        # Validate file size (limit to 10MB)
-        image_file.seek(0, 2)
-        file_size = image_file.tell()
-        image_file.seek(0)
-
-        if file_size > 10 * 1024 * 1024:
-            return jsonify({"error": "Image too large. Please use an image under 10MB"}), 413
-
-        if file_size < 1024:
-            return jsonify({"error": "Image too small. Please use a clearer image"}), 400
-
-        filename = f"image_{int(time.time())}.png"
-        image_path = os.path.join("/tmp", filename)
-        image_file.save(image_path)
-
-        print(f"📸 Saved image to: {image_path} (size: {file_size / 1024 / 1024:.2f}MB)")
-
-        # Validate image before analysis
-        is_valid, validation_msg = validate_image_for_analysis(image_path)
-        if not is_valid:
-            try:
-                os.remove(image_path)
-            except:
-                pass
-            return jsonify({"error": f"Invalid image: {validation_msg}"}), 400
-
-        # Perform analysis with timeout
-        from concurrent.futures import ThreadPoolExecutor, TimeoutError
-        import concurrent.futures
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(full_image_analysis, image_path, user_id)
-            try:
-                result = future.result(timeout=90)
-
-                if result.get("analysis_status") != "success":
-                    print(f"⚠️ Analysis failed: {result.get('debug_info', {}).get('error', 'Unknown error')}")
-                    try:
-                        os.remove(image_path)
-                    except:
-                        pass
-                    return jsonify({
-                        "error": "Analysis failed",
-                        "suggestion": "Please try with a clearer image of food"
-                    }), 500
-
-                if not result.get("dish_name") or "analysis failed" in result["dish_name"].lower():
-                    try:
-                        os.remove(image_path)
-                    except:
-                        pass
-                    return jsonify({
-                        "error": "Unable to analyze this image",
-                        "suggestion": "Please ensure the image clearly shows food items"
-                    }), 422
-
-            except concurrent.futures.TimeoutError:
-                print("⏱️ Analysis timeout")
-                try:
-                    os.remove(image_path)
-                except:
-                    pass
-                return jsonify({
-                    "error": "Analysis timeout",
-                    "suggestion": "Please try with a simpler or clearer image"
-                }), 408
-
-        result["user_id"] = user_id
-        print(f"✅ Analysis completed for {filename}")
-        print(f"📊 Dish: {result.get('dish_name', 'Unknown')}")
-        print(f"📊 Ingredients: {result.get('ingredient_list', [])}")
-        print(f"📊 Ingredients: {result.get('nutrition_facts', [])}")
-        print(f"⏱️ Analysis time: {result.get('analysis_time', 0):.2f}s")
-
-        try:
-            os.remove(image_path)
-        except:
-            pass
-
-        return jsonify(result), 200
-
-    except Exception as e:
-        print("❌ analyze Exception:", str(e))
-        traceback.print_exc()
-        try:
-            if 'image_path' in locals():
-                os.remove(image_path)
-        except:
-            pass
-        return jsonify({
-            "error": "Analysis failed",
-            "details": str(e)
-        }), 500
+    
 
 def compress_base64_image(base64_str, quality=5):
     try:
