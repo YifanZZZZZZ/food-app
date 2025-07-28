@@ -189,7 +189,7 @@ def get_profile():
 def analyze():
     print("Nothing in analyze()")
     full_image_analysis()
-    #1. extract image and user information 
+    #1. extract image and user information
 
     #2. temporarily save image
 
@@ -198,7 +198,7 @@ def analyze():
 
     #4. call full_image_analysis in backend thred with timeout of 90s
 
-    #5. handle failure
+    #5. handle failures
 
     #6. print summary to check your result
 
