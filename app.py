@@ -191,6 +191,7 @@ def analyze(your input fields):
     #2. temporarily save image
 
     #3. validate image quality 
+    is_valid, validation_msg = validate_image_for_analysis(image_path)
 
     #4. call full_image_analysis in backend thred with timeout of 90s
 
