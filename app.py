@@ -187,7 +187,9 @@ def get_profile():
 @app.route("/analyze", methods=["POST"])
 "your input fields"
 def analyze():
+    print("Nothing in analyze()")
     full_image_analysis()
+    break
     #1. extract image and user information 
 
     #2. temporarily save image
