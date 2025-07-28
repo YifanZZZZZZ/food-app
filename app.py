@@ -185,7 +185,9 @@ def get_profile():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/analyze", methods=["POST"])
-def analyze(your input fields):
+"your input fields"
+def analyze():
+    full_image_analysis()
     #1. extract image and user information 
 
     #2. temporarily save image
