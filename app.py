@@ -189,13 +189,12 @@ def get_profile():
 def analyze():
     print("Nothing in analyze()")
     full_image_analysis()
-    break
     #1. extract image and user information 
 
     #2. temporarily save image
 
     #3. validate image quality 
-    is_valid, validation_msg = validate_image_for_analysis(image_path)
+    # is_valid, validation_msg = validate_image_for_analysis(image_path)
 
     #4. call full_image_analysis in backend thred with timeout of 90s
 
