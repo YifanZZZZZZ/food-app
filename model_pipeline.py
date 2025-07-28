@@ -14,7 +14,7 @@ from transformers import pipeline
 # Load environment variables
 load_dotenv()
 
-# Load model
+# Load model inference
 
 # MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI")
