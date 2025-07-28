@@ -53,7 +53,6 @@ def full_image_analysis():
 def search_recipe():
 
 
-def recipe_classification(image_path):
 
     
 def validate_image_for_analysis(image_path):
