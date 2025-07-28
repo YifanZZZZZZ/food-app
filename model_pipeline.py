@@ -50,7 +50,9 @@ def parse_to_dict(text):
     return data_dict
 
 # Analyze image
-def full_image_analysis(enter your field):
+def full_image_analysis(): #enter your field
+    print("Nothing here")
+    search_recipe()
     #1. Start a timer to measure total analysis time.
 
     #2. Print the user ID and image path for debugging.
@@ -87,7 +89,8 @@ def full_image_analysis(enter your field):
 
 
 # Search Recipe
-def search_recipe(enter your field):
+def search_recipe(): #enter your field
+    print("Nothing here")
     #1. Convert the keyword to lowercase for case-insensitive matching.
 
     #2. Try to open the CSV file (default: ./recipes.csv, don't need to change).
