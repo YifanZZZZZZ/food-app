@@ -185,8 +185,20 @@ def get_profile():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/analyze", methods=["POST"])
-def analyze():
-    
+def analyze(your input fields):
+    #1. extract image and user information 
+
+    #2. temporarily save image
+
+    #3. validate image quality 
+
+    #4. call full_image_analysis in backend thred with timeout of 90s
+
+    #5. handle failure
+
+    #6. print summary to check your result
+
+    #7. return json result
 
 def compress_base64_image(base64_str, quality=5):
     try:
