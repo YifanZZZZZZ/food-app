@@ -51,7 +51,7 @@ def parse_to_dict(text):
 
 # Analyze image
 def full_image_analysis(): #enter your field
-    print("Nothing here")
+    print("Nothing in full_image_analysis()")
     search_recipe()
     #1. Start a timer to measure total analysis time.
 
@@ -90,7 +90,7 @@ def full_image_analysis(): #enter your field
 
 # Search Recipe
 def search_recipe(): #enter your field
-    print("Nothing here")
+    print("Nothing in search_recipe()")
     #1. Convert the keyword to lowercase for case-insensitive matching.
 
     #2. Try to open the CSV file (default: ./recipes.csv, don't need to change).
