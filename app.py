@@ -184,25 +184,47 @@ def get_profile():
         print(f"❌ Get profile error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+
+
 @app.route("/analyze", methods=["POST"])
-# "your input fields"
 def analyze():
-    print("Nothing in analyze()")
-    full_image_analysis()
-    #1. extract image and user information 
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
 
-    #2. temporarily save image
+        user_id = data.get("user_id")
+        base64_image = data.get("image")
+        if not user_id or not base64_image:
+            return jsonify({"error": "Missing user_id or image"}), 400
 
-    #3. validate image quality 
-    # is_valid, validation_msg = validate_image_for_analysis(image_path)
+        # Save image temporarily
+        image_data = base64.b64decode(base64_image)
+        temp_image_path = f"temp_{user_id}_{int(time.time())}.jpg"
+        with open(temp_image_path, "wb") as f:
+            f.write(image_data)
 
-    #4. call full_image_analysis in backend thred with timeout of 90s
+        # Validate image
+        is_valid, validation_msg = validate_image_for_analysis(temp_image_path)
+        if not is_valid:
+            os.remove(temp_image_path)
+            return jsonify({"status": "failure", "error": validation_msg}), 400
 
-    #5. handle failure
+        # Run analysis (with timeout if needed)
+        result = full_image_analysis(user_id=user_id, image_path=temp_image_path)
 
-    #6. print summary to check your result
+        # Clean up temp image
+        os.remove(temp_image_path)
 
-    #7. return json result
+        # Return result
+        return jsonify(result), 200 if result.get("status") == "success" else 500
+
+    except Exception as e:
+        print(f"❌ Error in analyze: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 def compress_base64_image(base64_str, quality=5):
     try:

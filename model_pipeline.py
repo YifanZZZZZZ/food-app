@@ -1,5 +1,7 @@
 from PIL import Image
 import requests
+import json
+import logging
 import base64
 import os
 import re
@@ -10,17 +12,16 @@ from pymongo import MongoClient
 from io import BytesIO
 import csv
 from transformers import pipeline
+from transformers import AutoFeatureExtractor, AutoModelForImageClassification
+
 
 # Load environment variables
 load_dotenv()
 
 # Load model inference
-
-
-
-
-
-
+model_name = "nateraw/food"
+processor = AutoFeatureExtractor.from_pretrained(model_name)
+model = AutoModelForImageClassification.from_pretrained(model_name)
 
 # MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI")
@@ -28,7 +29,6 @@ mongo_db = os.getenv("MONGO_DB", "food-app-swift")
 client = MongoClient(mongo_uri)
 db = client[mongo_db]
 meals_collection = db["meals"]
-
 
 
 def encode_image(image_path):
@@ -56,9 +56,9 @@ def parse_to_dict(text):
     return data_dict
 
 # Analyze image
-def full_image_analysis(): #enter your field
-    print("Nothing in full_image_analysis()")
-    search_recipe()
+# def full_image_analysis(): #enter your field
+#     print("Nothing in full_image_analysis()")
+#     search_recipe()
     #1. Start a timer to measure total analysis time.
 
     #2. Print the user ID and image path for debugging.
@@ -91,12 +91,84 @@ def full_image_analysis(): #enter your field
 
     #16. If any error occurs, catch it and return a failure response with error info.
 
+import traceback
+
+def full_image_analysis(user_id=None, image_path=None):
+    start_time = time.time()
+    debug_info = {}
+    try:
+        debug_info['user_id'] = user_id
+        debug_info['image_path'] = image_path
+
+        # Validate image
+        valid, msg = validate_image_for_analysis(image_path)
+        if not valid:
+            return {
+                "status": "failure",
+                "error": msg,
+                "analysis_time": 0,
+                "debug_info": debug_info
+            }
+
+        # Open and preprocess image
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            temp_path = "temp_optimized.jpg"
+            img.save(temp_path, format="JPEG", optimize=True, quality=85)
+
+        # Preprocess and run inference
+        inputs = processor(images=Image.open(temp_path), return_tensors="pt")
+        outputs = model(**inputs)
+        logits = outputs.logits
+        predicted_class_idx = logits.argmax(-1).item()
+        label = model.config.id2label[predicted_class_idx]
+        debug_info['predicted_label'] = label
+
+        # Clean up temp image
+        os.remove(temp_path)
+
+        # Search for recipe
+        recipe = search_recipe(label)
+        if not recipe:
+            return {
+                "status": "failure",
+                "error": "No matching recipe found",
+                "analysis_time": round(time.time() - start_time, 2),
+                "debug_info": debug_info
+            }
+
+        # Parse ingredients and nutrition
+        ingredients = parse_to_dict(recipe.get("ingredients", ""))
+        nutrition = parse_to_dict(recipe.get("nutrition", ""))
+
+        analysis_time = round(time.time() - start_time, 2)
+        debug_info['ingredients'] = ingredients
+        debug_info['nutrition'] = nutrition
+
+        return {
+            "status": "success",
+            "dish_name": label,
+            "ingredients": ingredients,
+            "nutrition": nutrition,
+            "analysis_time": analysis_time,
+            "debug_info": debug_info
+        }
+
+    except Exception as e:
+        return {
+            "status": "failure",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "analysis_time": round(time.time() - start_time, 2),
+            "debug_info": debug_info
+        }
+
 
 
 
 # Search Recipe
-def search_recipe(): #enter your field
-    print("Nothing in search_recipe()")
+# def search_recipe(): #enter your field
+#     print("Nothing in search_recipe()")
     #1. Convert the keyword to lowercase for case-insensitive matching.
 
     #2. Try to open the CSV file (default: ./recipes.csv, don't need to change).
@@ -114,6 +186,32 @@ def search_recipe(): #enter your field
     #8. If any other error occurs, print the error.
 
     #9. If no matching recipe is found, return None.
+
+def search_recipe(keyword, csv_path="./recipes.csv"):
+    """Search for a recipe by keyword in the CSV file."""
+    keyword = keyword.lower()
+    if not os.path.exists(csv_path):
+        print(f"CSV file not found: {csv_path}")
+        return None
+
+    try:
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            if not reader.fieldnames:
+                print("CSV file has no headers.")
+                return None
+
+            for row in reader:
+                # Assuming 'name' is the column for recipe name
+                if row.get("name", "").lower() == keyword:
+                    return row
+
+        # No matching recipe found
+        return None
+
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+        return None
 
 
     
