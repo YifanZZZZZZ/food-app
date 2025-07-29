@@ -2,7 +2,11 @@ services:
   - type: web
     name: food-analyzer
     env: python
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: |
+      apt-get update && apt-get install -y git-lfs
+      git lfs install
+      git lfs pull
+      pip install -r requirements.txt
     startCommand: "gunicorn app:app -k gevent --timeout 120 --workers 1"
     envVars:
       - key: GEMINI_API_KEY
