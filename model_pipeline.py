@@ -23,13 +23,81 @@ client = MongoClient(mongo_uri)
 db = client[mongo_db]
 meals_collection = db["meals"]
 
+import os
+import requests
+from PIL import Image
+import pandas as pd
+from io import BytesIO
+import random
+from pymongo import MongoClient
+from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+
+# Hugging Face model setup
+hf_token = "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"
+API_URL = "https://router.huggingface.co/hf-inference/models/nateraw/food"
+headers = {
+    "Authorization": f"Bearer {hf_token}",
+    "Content-Type": "image/jpeg"
+}
+
+def query(image_path):
+    with open(image_path, "rb") as f:
+        data = f.read()
+    response = requests.post(API_URL, headers=headers, data=data)
+    try:
+        return response.json()
+    except Exception:
+        return None
+
+# MongoDB setup
+mongo_uri = os.getenv("MONGO_URI")
+mongo_db = os.getenv("MONGO_DB", "food-app-swift")
+client = MongoClient(mongo_uri)
+db = client[mongo_db]
+meals_collection = db["meals"]
+
+# Load recipes CSV
+df = pd.read_csv("/content/recipes.csv", on_bad_lines='skip')
+secondCol = df.columns[1]
+desiredColumns = list(range(16, 27))  # columns 16–26
+
+# List of images to test
+image_dir = "/content/5/images/apple_pie"
+image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith('.jpg')]
+
+print(f"Found {len(image_files)} images")
+
+# Loop through images and classify
+for image_path in image_files:
+    print(f"\nProcessing: {image_path}")
+    output = query(image_path)
+
+    if output:
+        matchFound = False
+        for pred in output:
+            predictedFood = pred['label'].lower().strip()
+            results = df[df[secondCol].astype(str).fillna('').str.lower().str.contains(predictedFood)]
+
+            if not results.empty:
+                print(f"Predicted food: {pred['label']} (score: {pred['score']:.2f})")
+                print(f"Found {len(results)} matching recipes")
+                index = random.randint(0, len(results) - 1)
+                selected_recipe = results.iloc[index]
+                print(selected_recipe)
+                matchFound = True
+
+        if not matchFound:
+            print("No matching recipes found.")
+    else:
+        print("No output from the model.")
 
 def encode_image(image_path):
     """Encode image to base64"""
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
-
 
 def parse_to_dict(text):
     """Parse formatted text to dictionary"""
