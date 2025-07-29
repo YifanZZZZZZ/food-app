@@ -234,7 +234,7 @@ def analyze():
 
     #7. return json result
 
-try:
+    try:
         print("📥 /analyze endpoint called")
         start_time = time.time()
 
@@ -246,7 +246,7 @@ try:
         base64_image = data.get("image")
         if not user_id or not base64_image:
             return jsonify({"error": "Missing user_id or image"}), 400
- try:
+     try:
             image_data = base64.b64decode(base64_image)
             image = Image.open(BytesIO(image_data)).convert("RGB")
         except Exception as e:
