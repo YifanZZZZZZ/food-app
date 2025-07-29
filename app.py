@@ -204,6 +204,56 @@ def analyze():
 
     #7. return json result
 
+try:
+        print("📥 /analyze endpoint called")
+        start_time = time.time()
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request"}), 400
+
+        user_id = data.get("user_id")
+        base64_image = data.get("image")
+        if not user_id or not base64_image:
+            return jsonify({"error": "Missing user_id or image"}), 400
+ try:
+            image_data = base64.b64decode(base64_image)
+            image = Image.open(BytesIO(image_data)).convert("RGB")
+        except Exception as e:
+            return jsonify({"error": "Invalid image format"}), 400
+
+        image_path = f"/tmp/{hashlib.sha1(image_data).hexdigest()}.jpg"
+        image.save(image_path, format="JPEG")
+
+        print(f"📸 Saved image temporarily at {image_path}")
+is_valid, validation_msg = validate_image_for_analysis(image_path)
+        if not is_valid:
+            return jsonify({"error": f"Image validation failed: {validation_msg}"}), 400
+
+        # Step 3: Run analysis (with timeout safeguard)
+        try:
+            result = full_image_analysis(image_path)
+        except Exception as e:
+            print("❌ Error during analysis:", traceback.format_exc())
+            return jsonify({"error": "Image analysis failed"}), 500
+ duration = time.time() - start_time
+        print(f"✅ Analysis complete in {duration:.2f} seconds")
+        print(f"📊 Result summary: {result}")
+  image_full = base64_image
+        image_thumb = compress_base64_image(base64_image)
+
+        return jsonify({
+            "message": "Image analyzed successfully",
+            "analysis_result": result,
+            "image_full": image_full,
+            "image_thumb": image_thumb,
+            "analysis_time": f"{duration:.2f}s"
+        }), 200
+
+    except Exception as e:
+        print("❌ Unexpected error in analyze():", traceback.format_exc())
+        return jsonify({"error": "Unexpected server error"}), 500
+
 def compress_base64_image(base64_str, quality=5):
     try:
         image_data = base64.b64decode(base64_str)
