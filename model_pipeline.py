@@ -16,6 +16,12 @@ load_dotenv()
 
 # Load model inference
 
+
+
+
+
+
+
 # MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB", "food-app-swift")
