@@ -15,6 +15,26 @@ from transformers import pipeline
 load_dotenv()
 
 # Load model
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/nateraw/food"
+HF_HEADERS = {
+    "Authorization": f"Bearer {os.getenv('HF_TOKEN', 'None')}",
+    "Content-Type": "image/jpeg"
+}
+image_path = "/Users/zhangyifan/food-app/rib.jpg"
+
+# Load image bytes
+with open(image_path, "rb") as image_file:
+    image_data = image_file.read()
+
+# Send request
+response = requests.post(HF_API_URL, headers=HF_HEADERS, data=image_data)
+
+# Print result
+if response.status_code == 200:
+    print("✅ Prediction result:")
+    print(response.json())
+else:
+    print(f"❌ Error {response.status_code}: {response.text}")
 
 # MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI")
