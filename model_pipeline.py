@@ -19,11 +19,26 @@ from transformers import AutoFeatureExtractor, AutoModelForImageClassification
 load_dotenv()
 
 # Load model inference
+API_URL = "https://router.huggingface.co/hf-inference/models/nateraw/food"
+headers = {
+    "Authorization": f"Bearer {os.getenv('HF_TOKEN')}",
+}
+
+def query(filename):
+    with open(filename, "rb") as f:
+        data = f.read()
+    response = requests.post(API_URL, headers={"Content-Type": "image/jpeg", **headers}, data=data)
+    return response.json()
+
+output = query("/content/pasta.png")
+print(output)
+
 model_name = "nateraw/food"
 processor = AutoFeatureExtractor.from_pretrained(model_name)
 model = AutoModelForImageClassification.from_pretrained(model_name)
 
 # MongoDB Setup
+# os.getenv goes back to the environment variables
 mongo_uri = os.getenv("MONGO_URI")
 mongo_db = os.getenv("MONGO_DB", "food-app-swift")
 client = MongoClient(mongo_uri)
