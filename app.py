@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import os
 from pymongo import MongoClient
 from bson import ObjectId
-from model_pipeline import full_image_analysis, validate_image_for_analysis
 import base64
 import traceback
 import time
@@ -16,6 +15,37 @@ import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
+
+import os
+import json
+import zipfile
+import requests
+from pathlib import Path
+from dotenv import load_dotenv
+kaggle_json_raw = os.getenv("KAGGLE_JSON")
+assert kaggle_json_raw, "❌ KAGGLE_JSON is not set in env variables."
+
+os.makedirs(Path.home() / ".kaggle", exist_ok=True)
+kaggle_path = Path.home() / ".kaggle" / "kaggle.json"
+with open(kaggle_path, "w") as f:
+    f.write(kaggle_json_raw)
+os.chmod(kaggle_path, 0o600)
+
+from kaggle.api.kaggle_api_extended import KaggleApi
+# Step 2: Use Kaggle API to download the dataset
+print("📥 Downloading dataset from Kaggle...")
+api = KaggleApi()
+api.authenticate()
+api.dataset_download_files("irkaal/foodcom-recipes-and-reviews", path=".", unzip=True)
+
+# Step 3: Verify file exists
+if os.path.exists("recipes.csv"):
+    print("✅ recipes.csv downloaded and extracted.")
+else:
+    print("❌ Download failed or file missing.")
+
+from model_pipeline import full_image_analysis, validate_image_for_analysis
+
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
