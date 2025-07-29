@@ -32,18 +32,16 @@ with open(kaggle_path, "w") as f:
 os.chmod(kaggle_path, 0o600)
 
 from kaggle.api.kaggle_api_extended import KaggleApi
-# Step 2: Use Kaggle API to download the dataset
-print("📥 Downloading dataset from Kaggle...")
-api = KaggleApi()
-api.authenticate()
-api.dataset_download_files("irkaal/foodcom-recipes-and-reviews", path=".", unzip=True)
 
-# Step 3: Verify file exists
-if os.path.exists("recipes.csv"):
-    print("✅ recipes.csv downloaded and extracted.")
+if not os.path.exists("recipes.csv"):
+    print("📥 Downloading recipes.csv.zip from Kaggle...")
+    api = KaggleApi()
+    api.authenticate()
+    api.dataset_download_file("irkaal/foodcom-recipes-and-reviews", file_name="recipes.csv", path=".")
+
+    print("✅ recipes.csv extracted.")
 else:
-    print("❌ Download failed or file missing.")
-
+    print("✅ recipes.csv already exists.")
 from model_pipeline import full_image_analysis, validate_image_for_analysis
 
 app = Flask(__name__)
