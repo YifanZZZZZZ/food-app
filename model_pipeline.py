@@ -20,7 +20,7 @@ HF_HEADERS = {
     "Authorization": f"Bearer {os.getenv('HF_TOKEN', 'None')}",
     "Content-Type": "image/jpeg"
 }
-image_path = "/Users/zhangyifan/food-app/rib.jpg"
+image_path = "./rib.jpg"
 
 # Load image bytes
 with open(image_path, "rb") as image_file:
