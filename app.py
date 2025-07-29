@@ -40,10 +40,39 @@ profiles_collection.create_index("user_id")
 meals_collection = db["meals"]
 meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 
-
 # Debug Process
 print("✅ Connected to MongoDB URI:", os.getenv("MONGO_URI"))
 print("✅ Using DB name:", db.name)
+
+import os
+import json
+import zipfile
+import requests
+from pathlib import Path
+from kaggle.api.kaggle_api_extended import KaggleApi
+
+# Step 1: Load KAGGLE_JSON from env and write to ~/.kaggle/kaggle.json
+kaggle_json_raw = os.getenv("KAGGLE_JSON")
+assert kaggle_json_raw, "❌ KAGGLE_JSON is not set in env variables."
+
+os.makedirs(Path.home() / ".kaggle", exist_ok=True)
+kaggle_path = Path.home() / ".kaggle" / "kaggle.json"
+with open(kaggle_path, "w") as f:
+    f.write(kaggle_json_raw)
+os.chmod(kaggle_path, 0o600)
+
+# Step 2: Use Kaggle API to download the dataset
+print("📥 Downloading dataset from Kaggle...")
+api = KaggleApi()
+api.authenticate()
+api.dataset_download_files("irkaal/foodcom-recipes-and-reviews", path=".", unzip=True)
+
+# Step 3: Verify file exists
+if os.path.exists("recipes.csv"):
+    print("✅ recipes.csv downloaded and extracted.")
+else:
+    print("❌ Download failed or file missing.")
+
 
 @app.route("/ping", methods=["GET"])
 def ping():
