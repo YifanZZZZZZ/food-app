@@ -4,14 +4,14 @@ import AuthenticationServices
 struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session = SessionManager.shared
-
+    
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var isSecure = true
     @State private var isConfirmSecure = true
-
+    
     @State private var nameError = ""
     @State private var emailError = ""
     @State private var passwordError = ""
@@ -21,7 +21,7 @@ struct RegisterView: View {
     @State private var navigateToDashboard = false // Changed from navigateToProfile
     @State private var isLoading = false
     @State private var agreedToTerms = false
-
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -36,7 +36,7 @@ struct RegisterView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
-
+                
                 ScrollView {
                     VStack(spacing: 32) {
                         // Header
@@ -65,7 +65,7 @@ struct RegisterView: View {
                             }
                         }
                         .padding(.top, 20)
-
+                        
                         // Registration Form
                         VStack(spacing: 20) {
                             // Name Field
@@ -77,7 +77,7 @@ struct RegisterView: View {
                                 error: $nameError,
                                 validate: validateName
                             )
-
+                            
                             // Email Field
                             FormField(
                                 title: "Email",
@@ -88,7 +88,7 @@ struct RegisterView: View {
                                 validate: validateEmail,
                                 keyboardType: .emailAddress
                             )
-
+                            
                             // Password Field
                             SecureFormField(
                                 title: "Password",
@@ -104,7 +104,7 @@ struct RegisterView: View {
                             if !password.isEmpty {
                                 PasswordStrengthIndicator(password: password)
                             }
-
+                            
                             // Confirm Password Field
                             SecureFormField(
                                 title: "Confirm Password",
@@ -115,7 +115,7 @@ struct RegisterView: View {
                                 error: $confirmPasswordError,
                                 validate: validateConfirmPassword
                             )
-
+                            
                             // Terms and Conditions
                             HStack(alignment: .top, spacing: 12) {
                                 Button(action: { agreedToTerms.toggle() }) {
@@ -141,7 +141,7 @@ struct RegisterView: View {
                                 
                                 Spacer()
                             }
-
+                            
                             // Register Button
                             Button(action: {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -177,11 +177,11 @@ struct RegisterView: View {
                                 .opacity(agreedToTerms ? 1.0 : 0.6)
                             }
                             .disabled(isLoading || !agreedToTerms)
-
+                            
                             if registrationFailed {
                                 ErrorCard(message: registrationError)
                             }
-
+                            
                             // Divider
                             HStack {
                                 Rectangle()
@@ -198,13 +198,13 @@ struct RegisterView: View {
                                     .frame(height: 1)
                             }
                             .padding(.vertical, 8)
-
+                            
                             // Social Registration
                             VStack(spacing: 12) {
                                 SignInWithAppleButton(.signUp, onRequest: { _ in }, onCompletion: { _ in })
                                     .frame(height: 50)
                                     .cornerRadius(12)
-
+                                
                                 Button(action: {}) {
                                     HStack {
                                         Image(systemName: "globe")
@@ -224,7 +224,7 @@ struct RegisterView: View {
                                     )
                                 }
                             }
-
+                            
                             // Login Link
                             HStack(spacing: 4) {
                                 Text("Already have an account?")
@@ -251,7 +251,7 @@ struct RegisterView: View {
             }
         }
     }
-
+    
     // MARK: - Validation Functions
     
     func validateName() {
@@ -259,15 +259,15 @@ struct RegisterView: View {
             nameError = name.isEmpty ? "Name is required" : ""
         }
     }
-
+    
     func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         withAnimation(.easeInOut(duration: 0.2)) {
             emailError = trimmed.isEmpty ? "Email is required" :
-                (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
+            (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
         }
     }
-
+    
     func validatePassword() {
         withAnimation(.easeInOut(duration: 0.2)) {
             if password.isEmpty {
@@ -279,13 +279,13 @@ struct RegisterView: View {
             }
         }
     }
-
+    
     func validateConfirmPassword() {
         withAnimation(.easeInOut(duration: 0.2)) {
             confirmPasswordError = confirmPassword != password ? "Passwords do not match" : ""
         }
     }
-
+    
     func validateAll() {
         validateName()
         validateEmail()
@@ -297,11 +297,11 @@ struct RegisterView: View {
             registrationFailed = true
         }
     }
-
+    
     func allValid() -> Bool {
         nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty
     }
-
+    
     // MARK: - API Call
     
     func attemptRegister() {
@@ -316,6 +316,7 @@ struct RegisterView: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
+        // Fix: Proper closure syntax
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 self.isLoading = false
@@ -344,190 +345,192 @@ struct RegisterView: View {
                     }
                 }
                 
-                if let response = try? JSONDecoder().decode(RegisterResponse.self, from: data) {
+                // Decode the response properly
+                do {
+                    // Fix: Use RegisterResponse instead of RegisterResponseWithToken
+                    let response = try JSONDecoder().decode(RegisterResponse.self, from: data)
                     withAnimation(.spring()) {
-                        self.session.login(id: response.user_id, name: response.name)
-                        // Navigate directly to dashboard instead of profile setup
+                        self.session.login(id: response.user_id, name: response.name, token: response.token)
                         self.navigateToDashboard = true
                     }
-                } else {
+                } catch {
                     self.registrationFailed = true
                     self.registrationError = "Unexpected error. Please try again."
                 }
             }
-        }.resume()
+        }.resume() // Make sure .resume() is here
     }
-}
-
-// Supporting Views
-
-struct FormField: View {
-    let title: String
-    let icon: String
-    let placeholder: String
-    @Binding var text: String
-    @Binding var error: String
-    let validate: () -> Void
-    var keyboardType: UIKeyboardType = .default
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
-                .textCase(.uppercase)
-                .tracking(1)
-            
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.gray)
-                    .frame(width: 20)
-                
-                TextField(placeholder, text: $text)
-                    .keyboardType(keyboardType)
-                    .autocapitalization(keyboardType == .emailAddress ? .none : .words)
-                    .foregroundColor(.white)
-                    .onChange(of: text) { _, _ in validate() }
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(error.isEmpty ? Color.white.opacity(0.1) : Color.red.opacity(0.5), lineWidth: 1)
-                    )
-            )
-            
-            if !error.isEmpty {
-                Text(error)
+    // Supporting Views
+    
+    struct FormField: View {
+        let title: String
+        let icon: String
+        let placeholder: String
+        @Binding var text: String
+        @Binding var error: String
+        let validate: () -> Void
+        var keyboardType: UIKeyboardType = .default
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
                     .font(.caption)
-                    .foregroundColor(.red)
-                    .transition(.opacity)
-            }
-        }
-    }
-}
-
-struct SecureFormField: View {
-    let title: String
-    let icon: String
-    let placeholder: String
-    @Binding var text: String
-    @Binding var isSecure: Bool
-    @Binding var error: String
-    let validate: () -> Void
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
-                .textCase(.uppercase)
-                .tracking(1)
-            
-            HStack {
-                Image(systemName: icon)
                     .foregroundColor(.gray)
-                    .frame(width: 20)
+                    .textCase(.uppercase)
+                    .tracking(1)
                 
-                if isSecure {
-                    SecureField(placeholder, text: $text)
-                        .foregroundColor(.white)
-                } else {
-                    TextField(placeholder, text: $text)
-                        .foregroundColor(.white)
-                }
-                
-                Button(action: { isSecure.toggle() }) {
-                    Image(systemName: isSecure ? "eye.slash.fill" : "eye.fill")
+                HStack {
+                    Image(systemName: icon)
                         .foregroundColor(.gray)
-                        .font(.caption)
+                        .frame(width: 20)
+                    
+                    TextField(placeholder, text: $text)
+                        .keyboardType(keyboardType)
+                        .autocapitalization(keyboardType == .emailAddress ? .none : .words)
+                        .foregroundColor(.white)
+                        .onChange(of: text) { _, _ in validate() }
                 }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(error.isEmpty ? Color.white.opacity(0.1) : Color.red.opacity(0.5), lineWidth: 1)
+                        )
+                )
+                
+                if !error.isEmpty {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .transition(.opacity)
+                }
+            }
+        }
+    }
+    
+    struct SecureFormField: View {
+        let title: String
+        let icon: String
+        let placeholder: String
+        @Binding var text: String
+        @Binding var isSecure: Bool
+        @Binding var error: String
+        let validate: () -> Void
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .textCase(.uppercase)
+                    .tracking(1)
+                
+                HStack {
+                    Image(systemName: icon)
+                        .foregroundColor(.gray)
+                        .frame(width: 20)
+                    
+                    if isSecure {
+                        SecureField(placeholder, text: $text)
+                            .foregroundColor(.white)
+                    } else {
+                        TextField(placeholder, text: $text)
+                            .foregroundColor(.white)
+                    }
+                    
+                    Button(action: { isSecure.toggle() }) {
+                        Image(systemName: isSecure ? "eye.slash.fill" : "eye.fill")
+                            .foregroundColor(.gray)
+                            .font(.caption)
+                    }
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(error.isEmpty ? Color.white.opacity(0.1) : Color.red.opacity(0.5), lineWidth: 1)
+                        )
+                )
+                .onChange(of: text) { _, _ in validate() }
+                
+                if !error.isEmpty {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .transition(.opacity)
+                }
+            }
+        }
+    }
+    
+    struct PasswordStrengthIndicator: View {
+        let password: String
+        
+        var strength: (text: String, color: Color, progress: Double) {
+            if password.count < 6 { return ("Weak", .red, 0.25) }
+            else if password.count < 10 { return ("Fair", .orange, 0.5) }
+            else if password.count < 14 { return ("Good", .yellow, 0.75) }
+            else { return ("Strong", .green, 1.0) }
+        }
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Password strength:")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Text(strength.text)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(strength.color)
+                }
+                
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 4)
+                        
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(strength.color)
+                            .frame(width: geometry.size.width * strength.progress, height: 4)
+                            .animation(.spring(), value: strength.progress)
+                    }
+                }
+                .frame(height: 4)
+            }
+        }
+    }
+    
+    struct ErrorCard: View {
+        let message: String
+        
+        var body: some View {
+            HStack {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundColor(.red)
+                
+                Text(message)
+                    .foregroundColor(.red)
+                    .font(.caption)
+                
+                Spacer()
             }
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.red.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(error.isEmpty ? Color.white.opacity(0.1) : Color.red.opacity(0.5), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
                     )
             )
-            .onChange(of: text) { _, _ in validate() }
-            
-            if !error.isEmpty {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .transition(.opacity)
-            }
         }
-    }
-}
-
-struct PasswordStrengthIndicator: View {
-    let password: String
-    
-    var strength: (text: String, color: Color, progress: Double) {
-        if password.count < 6 { return ("Weak", .red, 0.25) }
-        else if password.count < 10 { return ("Fair", .orange, 0.5) }
-        else if password.count < 14 { return ("Good", .yellow, 0.75) }
-        else { return ("Strong", .green, 1.0) }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Password strength:")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                
-                Text(strength.text)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(strength.color)
-            }
-            
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.1))
-                        .frame(height: 4)
-                    
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(strength.color)
-                        .frame(width: geometry.size.width * strength.progress, height: 4)
-                        .animation(.spring(), value: strength.progress)
-                }
-            }
-            .frame(height: 4)
-        }
-    }
-}
-
-struct ErrorCard: View {
-    let message: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "exclamationmark.circle.fill")
-                .foregroundColor(.red)
-            
-            Text(message)
-                .foregroundColor(.red)
-                .font(.caption)
-            
-            Spacer()
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.red.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                )
-        )
     }
 }

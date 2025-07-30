@@ -517,18 +517,13 @@ struct UploadMealView: View {
     }
     
     func recalculateNutrition() {
-        guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
-        
         isRecalculatingNutrition = true
         
         // Combine visible and hidden ingredients for recalculation
         let allIngredients = visibleIngredients + hiddenIngredients
         let ingredientsList = allIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
         
-        NetworkManager.shared.recalculateNutrition(
-            ingredients: ingredientsList,
-            userId: userId
-        ) { result in
+        NetworkManager.shared.recalculateNutrition(ingredients: ingredientsList) { result in
             self.isRecalculatingNutrition = false
             
             switch result {
@@ -612,57 +607,50 @@ struct UploadMealView: View {
         rawNutritionInfo = ""
         
         let resizedImage = resizeImage(image, maxDimension: 800) ?? image
-        guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
-            isLoading = false
-            errorMessage = "Failed to process image."
-            return
-        }
-        
-        let userId = UserDefaults.standard.string(forKey: "user_id") ?? ""
-        if userId.isEmpty {
-            isLoading = false
-            errorMessage = "Login session missing. Please log in again."
-            return
-        }
-        
-        NetworkManager.shared.uploadImage(imageData: imageData, userId: userId) { result in
-            self.isLoading = false
+            guard let imageData = compressImage(resizedImage, maxSizeKB: 500) else {
+                isLoading = false
+                errorMessage = "Failed to process image."
+                return
+            }
             
-            switch result {
-            case .success(let geminiResult):
-                withAnimation(.spring()) {
-                    self.detectedDish = geminiResult.dish_prediction
-                    self.editableDishName = geminiResult.dish_prediction
-                    self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
-                    
-                    // Parse hidden ingredients
-                    if let hiddenText = geminiResult.hidden_ingredients, !hiddenText.isEmpty {
-                        self.hiddenIngredients = self.parseIngredientsToEditable(from: hiddenText)
-                        self.rawHiddenIngredients = hiddenText
-                        print("🔍 Hidden ingredients parsed: \(self.hiddenIngredients.count) items")
-                    } else {
-                        print("⚠️ No hidden ingredients received")
-                        self.hiddenIngredients = []
-                        self.rawHiddenIngredients = ""
+            NetworkManager.shared.uploadImage(imageData: imageData) { result in
+                self.isLoading = false
+                
+                switch result {
+                case .success(let geminiResult):
+                    withAnimation(.spring()) {
+                        self.detectedDish = geminiResult.dish_prediction
+                        self.editableDishName = geminiResult.dish_prediction
+                        self.visibleIngredients = self.parseIngredientsToEditable(from: geminiResult.image_description)
+                        
+                        // Parse hidden ingredients
+                        if let hiddenText = geminiResult.hidden_ingredients, !hiddenText.isEmpty {
+                            self.hiddenIngredients = self.parseIngredientsToEditable(from: hiddenText)
+                            self.rawHiddenIngredients = hiddenText
+                            print("🔍 Hidden ingredients parsed: \(self.hiddenIngredients.count) items")
+                        } else {
+                            print("⚠️ No hidden ingredients received")
+                            self.hiddenIngredients = []
+                            self.rawHiddenIngredients = ""
+                        }
+                        
+                        // Set raw nutrition info for Beautiful Nutrition View
+                        self.rawNutritionInfo = geminiResult.nutrition_info
+                        
+                        // Also maintain legacy arrays for compatibility
+                        self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
+                        self.calories = self.extractCalories(from: geminiResult.nutrition_info)
                     }
                     
-                    // Set raw nutrition info for Beautiful Nutrition View
-                    self.rawNutritionInfo = geminiResult.nutrition_info
-                    
-                    // Also maintain legacy arrays for compatibility
-                    self.nutritionLines = self.parseNutritionLines(from: geminiResult.nutrition_info)
-                    self.calories = self.extractCalories(from: geminiResult.nutrition_info)
-                }
-                
-            case .failure(let error):
-                if (error as NSError).code == NSURLErrorTimedOut {
-                    self.errorMessage = "Analysis timed out. Try a clearer image."
-                } else {
-                    self.errorMessage = error.localizedDescription
+                case .failure(let error):
+                    if (error as NSError).code == NSURLErrorTimedOut {
+                        self.errorMessage = "Analysis timed out. Try a clearer image."
+                    } else {
+                        self.errorMessage = error.localizedDescription
+                    }
                 }
             }
         }
-    }
 
     func saveMealToBackend() {
         guard !editableDishName.isEmpty else {

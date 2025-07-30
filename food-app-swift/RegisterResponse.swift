@@ -6,4 +6,5 @@ import Foundation
 struct RegisterResponse: Codable {
     let user_id: String
     let name: String
+    let token: String  // Add this line
 }
