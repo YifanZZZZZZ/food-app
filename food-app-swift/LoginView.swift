@@ -1,11 +1,6 @@
 import SwiftUI
 import AuthenticationServices
 
-struct LoginResponse: Codable {
-    let user_id: String
-    let name: String
-}
-
 struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
@@ -171,9 +166,7 @@ struct LoginView: View {
                                 validateEmail()
                                 validatePassword()
                                 if emailError.isEmpty && passwordError.isEmpty {
-                                    pingServerBeforeLogin {
-                                        attemptLogin()
-                                    }
+                                    attemptLogin()
                                 }
                             }) {
                                 ZStack {
@@ -311,101 +304,41 @@ struct LoginView: View {
         }
     }
 
-    // MARK: - /ping First
-    private func pingServerBeforeLogin(completion: @escaping () -> Void) {
-        guard let pingURL = URL(string: "https://food-app-swift.onrender.com/ping") else {
-            completion()
-            return
-        }
-
-        var request = URLRequest(url: pingURL)
-        request.timeoutInterval = 10
-
-        URLSession.shared.dataTask(with: request) { _, _, _ in
-            DispatchQueue.main.async {
-                completion()
-            }
-        }.resume()
-    }
-
-    // MARK: - Login API Call
+    // MARK: - Login API Call with JWT
     private func attemptLogin() {
         isLoading = true
         loginFailed = false
         
-        guard let url = URL(string: "https://food-app-swift.onrender.com/login") else { return }
-
-        let payload = ["email": email, "password": password]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            print("❌ Failed to serialize payload")
-            isLoading = false
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        request.timeoutInterval = 60
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 90
-        let session = URLSession(configuration: config)
-
-        session.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                self.isLoading = false
-            }
+        NetworkManager.shared.login(email: email, password: password) { result in
+            self.isLoading = false
             
-            if let error = error {
-                print("❌ Login Error: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self.loginFailed = true
-                    self.loginErrorMessage = "Network error. Please try again."
+            switch result {
+            case .success(let (userId, name, token)):
+                print("✅ Login successful - Token received")
+                
+                // Save user session with JWT token
+                SessionManager.shared.login(id: userId, name: name, token: token)
+                
+                // Navigate to dashboard
+                withAnimation(.spring()) {
+                    self.navigateToDashboard = true
                 }
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  let data = data else {
-                DispatchQueue.main.async {
-                    self.loginFailed = true
-                    self.loginErrorMessage = "Unexpected server response."
-                }
-                return
-            }
-
-            if httpResponse.statusCode == 200 {
-                if let response = try? JSONDecoder().decode(LoginResponse.self, from: data) {
-                    DispatchQueue.main.async {
-                        withAnimation(.spring()) {
-                            SessionManager.shared.login(id: response.user_id, name: response.name)
-                            // Navigate directly to dashboard instead of profile setup
-                            self.navigateToDashboard = true
-                        }
+                
+            case .failure(let error):
+                print("❌ Login failed: \(error)")
+                self.loginFailed = true
+                
+                if let nsError = error as NSError? {
+                    if nsError.code == 401 {
+                        self.loginErrorMessage = "Invalid email or password"
+                    } else {
+                        self.loginErrorMessage = nsError.localizedDescription
                     }
                 } else {
-                    DispatchQueue.main.async {
-                        self.loginFailed = true
-                        self.loginErrorMessage = "Login succeeded but decoding failed."
-                    }
-                }
-            } else {
-                if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                   let serverMessage = json["error"] as? String {
-                    DispatchQueue.main.async {
-                        self.loginFailed = true
-                        self.loginErrorMessage = serverMessage
-                    }
-                } else {
-                    DispatchQueue.main.async {
-                        self.loginFailed = true
-                        self.loginErrorMessage = "Invalid email or password."
-                    }
+                    self.loginErrorMessage = "Login failed. Please try again."
                 }
             }
-        }.resume()
+        }
     }
 }
 

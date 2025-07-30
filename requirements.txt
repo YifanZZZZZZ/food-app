@@ -6,3 +6,5 @@ python-dotenv==1.0.0
 numpy==1.24.3
 pymongo==4.5.0
 gunicorn==21.2.0
+bcrypt==4.0.1
+PyJWT==2.8.0

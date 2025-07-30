@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
@@ -10,15 +10,21 @@ import traceback
 import time
 from io import BytesIO
 from PIL import Image
-import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 import google.generativeai as genai
+import bcrypt
+import jwt
+from functools import wraps
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+
+# JWT Configuration
+app.config['SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-this')
+app.config['JWT_EXPIRATION_HOURS'] = 24 * 7  # 7 days
 
 # Configure MongoDB with connection pooling
 client = MongoClient(
@@ -44,13 +50,64 @@ meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
+# HTTPS Enforcement Middleware
+@app.before_request
+def force_https():
+    # Skip HTTPS enforcement for local development
+    if os.getenv('ENVIRONMENT', 'development') == 'production':
+        if not request.is_secure and request.headers.get('X-Forwarded-Proto') != 'https':
+            return redirect(request.url.replace('http://', 'https://'))
+
+# JWT Token Required Decorator
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        
+        # Get token from header
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(' ')[1]  # Bearer <token>
+            except IndexError:
+                return jsonify({'error': 'Invalid token format'}), 401
+        
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+        
+        try:
+            # Decode token
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user_id = data['user_id']
+            
+            # Add user_id to request context
+            request.user_id = current_user_id
+            
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        return f(*args, **kwargs)
+    
+    return decorated
+
+# Helper function to generate JWT token
+def generate_token(user_id):
+    payload = {
+        'user_id': str(user_id),
+        'exp': datetime.utcnow() + timedelta(hours=app.config['JWT_EXPIRATION_HOURS'])
+    }
+    token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    return token
+
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
 
 @app.route("/")
 def home():
-    return {"message": "Food Analyzer Backend is Running", "version": "2.1", "based_on": "Working Web App Backend"}, 200
+    return {"message": "Food Analyzer Backend is Running", "version": "3.0", "security": "enhanced"}, 200
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -65,8 +122,8 @@ def health():
             "status": "healthy",
             "mongodb": "connected",
             "gemini": "configured" if gemini_ok else "missing API key",
-            "analysis_mode": "working_web_app_based",
-            "backend_version": "proven_stable",
+            "security": "jwt+bcrypt",
+            "https": "enforced" if os.getenv('ENVIRONMENT') == 'production' else "development",
             "timestamp": datetime.now().isoformat()
         }), 200
     except Exception as e:
@@ -93,20 +150,25 @@ def register():
         if users_collection.find_one({"email": data["email"]}):
             return jsonify({"error": "Email already registered"}), 409
 
-        # Hash password with SHA256
-        hashed_pw = hashlib.sha256(data["password"].encode()).hexdigest()
+        # Hash password with bcrypt
+        hashed_pw = bcrypt.hashpw(data["password"].encode('utf-8'), bcrypt.gensalt())
         
         user = {
             "name": data["name"],
             "email": data["email"],
-            "password": hashed_pw,
+            "password": hashed_pw,  # Store as bytes
             "created_at": datetime.now().isoformat()
         }
         
         result = users_collection.insert_one(user)
+        
+        # Generate JWT token
+        token = generate_token(result.inserted_id)
+        
         return jsonify({
             "user_id": str(result.inserted_id), 
-            "name": data["name"]
+            "name": data["name"],
+            "token": token
         }), 200
         
     except Exception as e:
@@ -128,14 +190,17 @@ def login():
         if not user:
             return jsonify({"error": "Invalid email or password"}), 401
 
-        # Check password
-        input_pw_hash = hashlib.sha256(data["password"].encode()).hexdigest()
-        if user["password"] != input_pw_hash:
+        # Check password with bcrypt
+        if not bcrypt.checkpw(data["password"].encode('utf-8'), user["password"]):
             return jsonify({"error": "Invalid email or password"}), 401
+
+        # Generate JWT token
+        token = generate_token(user["_id"])
 
         return jsonify({
             "user_id": str(user["_id"]), 
-            "name": user["name"]
+            "name": user["name"],
+            "token": token
         }), 200
         
     except Exception as e:
@@ -143,17 +208,17 @@ def login():
         return jsonify({"error": "Login failed"}), 500
 
 @app.route("/save-profile", methods=["POST"])
+@token_required
 def save_profile():
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty or invalid JSON"}), 400
 
-        user_id = data.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id"}), 400
-
-        # Remove user_id from data before saving
+        # Use user_id from JWT token
+        user_id = request.user_id
+        
+        # Remove user_id from data if present
         profile_data = {k: v for k, v in data.items() if k != "user_id"}
         profile_data["updated_at"] = datetime.now().isoformat()
         
@@ -169,11 +234,11 @@ def save_profile():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-profile", methods=["GET"])
+@token_required
 def get_profile():
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
+        # Use user_id from JWT token
+        user_id = request.user_id
 
         profile = profiles_collection.find_one({"user_id": user_id})
         if not profile:
@@ -186,14 +251,15 @@ def get_profile():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/analyze", methods=["POST"])
+@token_required
 def analyze():
-    """Image analysis endpoint - based on working web app"""
+    """Image analysis endpoint - enhanced with JWT auth"""
     try:
         if "image" not in request.files:
             return jsonify({"error": "No image part in the request"}), 400
 
         image_file = request.files["image"]
-        user_id = request.form.get("user_id", "guest")
+        user_id = request.user_id  # From JWT token
 
         # Validate file size (limit to 10MB)
         image_file.seek(0, 2)  # Seek to end
@@ -303,23 +369,6 @@ def analyze():
             "details": str(e)
         }), 500
 
-@app.route("/analyze-enhanced", methods=["POST"])
-def analyze_enhanced():
-    """Enhanced analysis endpoint - redirects to main analyze since it's already fully dynamic"""
-    try:
-        # Since our main analysis is already fully dynamic and enhanced, 
-        # we can redirect to it with additional context
-        print("🔄 Enhanced analysis requested - using fully dynamic analysis")
-        return analyze()
-        
-    except Exception as e:
-        print("❌ Enhanced analyze Exception:", str(e))
-        traceback.print_exc()
-        return jsonify({
-            "error": "Enhanced analysis failed",
-            "details": str(e)
-        }), 500
-
 def compress_base64_image(base64_str, quality=5):
     try:
         image_data = base64.b64decode(base64_str)
@@ -333,16 +382,20 @@ def compress_base64_image(base64_str, quality=5):
         return None
 
 @app.route("/save-meal", methods=["POST"])
+@token_required
 def save_meal():
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
             
-        required = ["user_id", "dish_prediction", "image_description", "nutrition_info"]
+        required = ["dish_prediction", "image_description", "nutrition_info"]
         missing = [k for k in required if k not in data]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+
+        # Use user_id from JWT token
+        user_id = request.user_id
 
         # Process images
         image = data.get("image", None)
@@ -351,7 +404,7 @@ def save_meal():
 
         # Build meal document
         meal = {
-            "user_id": data["user_id"],
+            "user_id": user_id,
             "dish_prediction": data["dish_prediction"],
             "image_description": data["image_description"],
             "nutrition_info": data["nutrition_info"],
@@ -375,11 +428,11 @@ def save_meal():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/user-meals", methods=["GET"])
+@token_required
 def get_user_meals():
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
+        # Use user_id from JWT token
+        user_id = request.user_id
 
         # Query meals for the user, sorted by date
         meals = list(meals_collection.find(
@@ -436,6 +489,7 @@ def get_user_meals():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/update-meal", methods=["PUT"])
+@token_required
 def update_meal():
     try:
         data = request.get_json()
@@ -445,6 +499,11 @@ def update_meal():
         meal_id = data.get("meal_id")
         if not meal_id:
             return jsonify({"error": "Missing meal_id"}), 400
+        
+        # Verify meal belongs to user
+        meal = meals_collection.find_one({"_id": ObjectId(meal_id)})
+        if not meal or meal["user_id"] != request.user_id:
+            return jsonify({"error": "Meal not found or unauthorized"}), 404
         
         # Prepare update data
         update_data = {}
@@ -476,6 +535,7 @@ def update_meal():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/delete-meal", methods=["DELETE"])
+@token_required
 def delete_meal():
     try:
         data = request.get_json()
@@ -485,6 +545,11 @@ def delete_meal():
         meal_id = data.get("meal_id")
         if not meal_id:
             return jsonify({"error": "Missing meal_id"}), 400
+        
+        # Verify meal belongs to user
+        meal = meals_collection.find_one({"_id": ObjectId(meal_id)})
+        if not meal or meal["user_id"] != request.user_id:
+            return jsonify({"error": "Meal not found or unauthorized"}), 404
         
         # Delete meal from database
         result = meals_collection.delete_one({"_id": ObjectId(meal_id)})
@@ -499,6 +564,7 @@ def delete_meal():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/recalculate-nutrition", methods=["POST"])
+@token_required
 def recalculate_nutrition():
     """Fully dynamic nutrition recalculation endpoint"""
     try:
@@ -507,7 +573,6 @@ def recalculate_nutrition():
             return jsonify({"error": "Empty request"}), 400
         
         ingredients = data.get("ingredients", "")
-        user_id = data.get("user_id", "")
         
         if not ingredients:
             return jsonify({"error": "No ingredients provided"}), 400
@@ -515,7 +580,7 @@ def recalculate_nutrition():
         # Use enhanced recalculation from model_pipeline
         from model_pipeline import recalculate_nutrition_enhanced
         
-        print(f"🔄 Recalculating nutrition for user {user_id}")
+        print(f"🔄 Recalculating nutrition for user {request.user_id}")
         print(f"📋 Ingredients: {ingredients[:100]}...")
         
         try:
@@ -544,24 +609,24 @@ def recalculate_nutrition():
     except Exception as e:
         print(f"❌ Error in recalculate_nutrition: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
-    
+
 # Add these endpoints to your app.py file
 
 @app.route("/add-exercise", methods=["POST"])
+@token_required
 def add_exercise():
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
         
-        required = ["user_id", "exercise_type", "duration"]
+        required = ["exercise_type", "duration"]
         missing = [k for k in required if k not in data]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
         
         exercise = {
-            "user_id": data["user_id"],
+            "user_id": request.user_id,
             "exercise_type": data["exercise_type"],
             "duration": data["duration"],
             "intensity": data.get("intensity", "Moderate"),
@@ -585,15 +650,12 @@ def add_exercise():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/user-exercise", methods=["GET"])
+@token_required
 def get_user_exercise():
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-        
         exercises_collection = db["exercise"]
         exercises = list(exercises_collection.find(
-            {"user_id": user_id}
+            {"user_id": request.user_id}
         ).sort("recorded_at", -1))
         
         for exercise in exercises:
@@ -606,19 +668,20 @@ def get_user_exercise():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/add-water", methods=["POST"])
+@token_required
 def add_water():
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
         
-        required = ["user_id", "amount"]
+        required = ["amount"]
         missing = [k for k in required if k not in data]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
         
         water_entry = {
-            "user_id": data["user_id"],
+            "user_id": request.user_id,
             "amount": data["amount"],
             "recorded_at": data.get("recorded_at", datetime.now().isoformat())
         }
@@ -638,15 +701,12 @@ def add_water():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/user-water", methods=["GET"])
+@token_required
 def get_user_water():
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-        
         water_collection = db["water"]
         water_entries = list(water_collection.find(
-            {"user_id": user_id}
+            {"user_id": request.user_id}
         ).sort("recorded_at", -1))
         
         for entry in water_entries:
@@ -659,19 +719,20 @@ def get_user_water():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/add-weight", methods=["POST"])
+@token_required
 def add_weight():
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
         
-        required = ["user_id", "weight"]
+        required = ["weight"]
         missing = [k for k in required if k not in data]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
         
         weight_entry = {
-            "user_id": data["user_id"],
+            "user_id": request.user_id,
             "weight": data["weight"],
             "recorded_at": data.get("recorded_at", datetime.now().isoformat())
         }
@@ -691,15 +752,12 @@ def add_weight():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/user-weight", methods=["GET"])
+@token_required
 def get_user_weight():
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-        
         weight_collection = db["weight"]
         weight_entries = list(weight_collection.find(
-            {"user_id": user_id}
+            {"user_id": request.user_id}
         ).sort("recorded_at", -1))
         
         for entry in weight_entries:
@@ -712,13 +770,10 @@ def get_user_weight():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/dashboard-stats", methods=["GET"])
+@token_required
 def get_dashboard_stats():
     """Get comprehensive dashboard statistics"""
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-        
         # Get current date info
         now = datetime.now()
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -732,23 +787,23 @@ def get_dashboard_stats():
         weight_collection = db["weight"]
         
         # Get meal stats
-        meals = list(meals_collection.find({"user_id": user_id}))
+        meals = list(meals_collection.find({"user_id": request.user_id}))
         today_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')).date() == today.date()]
         week_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')) >= week_start]
         month_meals = [m for m in meals if datetime.fromisoformat(m.get("saved_at", "").replace('Z', '+00:00')) >= month_start]
         
         # Get water stats
-        water_entries = list(water_collection.find({"user_id": user_id}))
+        water_entries = list(water_collection.find({"user_id": request.user_id}))
         today_water = sum(w["amount"] for w in water_entries if datetime.fromisoformat(w.get("recorded_at", "").replace('Z', '+00:00')).date() == today.date())
         week_water = sum(w["amount"] for w in water_entries if datetime.fromisoformat(w.get("recorded_at", "").replace('Z', '+00:00')) >= week_start)
         
         # Get exercise stats
-        exercise_entries = list(exercise_collection.find({"user_id": user_id}))
+        exercise_entries = list(exercise_collection.find({"user_id": request.user_id}))
         today_exercise = sum(e["duration"] for e in exercise_entries if datetime.fromisoformat(e.get("recorded_at", "").replace('Z', '+00:00')).date() == today.date())
         week_exercise = sum(e["duration"] for e in exercise_entries if datetime.fromisoformat(e.get("recorded_at", "").replace('Z', '+00:00')) >= week_start)
         
         # Get weight stats
-        weight_entries = list(weight_collection.find({"user_id": user_id}).sort("recorded_at", -1))
+        weight_entries = list(weight_collection.find({"user_id": request.user_id}).sort("recorded_at", -1))
         current_weight = weight_entries[0]["weight"] if weight_entries else 0
         
         # Calculate streak (simplified)
@@ -786,15 +841,12 @@ def get_dashboard_stats():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/user-insights", methods=["GET"])
+@token_required
 def get_user_insights():
     """Get personalized health insights"""
     try:
-        user_id = request.args.get("user_id")
-        if not user_id:
-            return jsonify({"error": "Missing user_id parameter"}), 400
-        
         # Get user profile for goals
-        profile = profiles_collection.find_one({"user_id": user_id})
+        profile = profiles_collection.find_one({"user_id": request.user_id})
         if not profile:
             return jsonify({"error": "Profile not found"}), 404
         
@@ -805,7 +857,7 @@ def get_user_insights():
         
         # Get today's meals
         today_meals = list(meals_collection.find({
-            "user_id": user_id,
+            "user_id": request.user_id,
             "saved_at": {"$gte": today.isoformat()}
         }))
         
@@ -825,7 +877,7 @@ def get_user_insights():
         # Get today's water
         today_water = sum(
             w["amount"] for w in db["water"].find({
-                "user_id": user_id,
+                "user_id": request.user_id,
                 "recorded_at": {"$gte": today.isoformat()}
             })
         )
@@ -833,7 +885,7 @@ def get_user_insights():
         # Get today's exercise
         today_exercise = sum(
             e["duration"] for e in db["exercise"].find({
-                "user_id": user_id,
+                "user_id": request.user_id,
                 "recorded_at": {"$gte": today.isoformat()}
             })
         )
@@ -913,7 +965,7 @@ def payload_too_large(error):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Starting Food Analyzer Backend on port {port}")
-    print(f"✅ Based on proven working web app backend")
-    print(f"🤖 Using Gemini AI with tested prompts")
+    print(f"✅ Enhanced with JWT authentication and bcrypt")
+    print(f"🔒 Security: JWT tokens + bcrypt passwords")
     print(f"📱 Compatible with Swift frontend")
     app.run(host="0.0.0.0", port=port, threaded=True)
