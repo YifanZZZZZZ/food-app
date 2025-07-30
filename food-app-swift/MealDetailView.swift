@@ -471,8 +471,6 @@ struct MealDetailView: View {
     }
     
     func recalculateNutrition() {
-        guard let userId = UserDefaults.standard.string(forKey: "user_id") else { return }
-        
         isRecalculatingNutrition = true
         
         // Combine visible and hidden ingredients
@@ -480,8 +478,7 @@ struct MealDetailView: View {
         let ingredientsList = allIngredients.map { "\($0.name) | \($0.quantity) | \($0.unit)" }.joined(separator: "\n")
         
         NetworkManager.shared.recalculateNutrition(
-            ingredients: ingredientsList,
-            userId: userId
+            ingredients: ingredientsList
         ) { result in
             self.isRecalculatingNutrition = false
             
