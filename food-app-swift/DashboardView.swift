@@ -67,6 +67,7 @@ struct DashboardView: View {
         case serverError
         case profileSyncFailed
         case dataLoadFailed
+        case sessionExpired
         
         var id: String {
             switch self {
@@ -74,6 +75,7 @@ struct DashboardView: View {
             case .serverError: return "server_error"
             case .profileSyncFailed: return "profile_sync_failed"
             case .dataLoadFailed: return "data_load_failed"
+            case .sessionExpired: return "session_expired"
             }
         }
         
@@ -83,6 +85,7 @@ struct DashboardView: View {
             case .serverError: return "Server Error"
             case .profileSyncFailed: return "Profile Sync Failed"
             case .dataLoadFailed: return "Data Load Failed"
+            case .sessionExpired: return "Session Expired"
             }
         }
         
@@ -92,6 +95,7 @@ struct DashboardView: View {
             case .serverError: return "Our servers are experiencing issues. Please try again later."
             case .profileSyncFailed: return "Unable to sync your profile. Some features may be limited."
             case .dataLoadFailed: return "Failed to load your data. Pull to refresh to try again."
+            case .sessionExpired: return "Your session has expired. Please log in again."
             }
         }
     }
@@ -170,18 +174,25 @@ struct DashboardView: View {
                         // Enhanced Time Filter
                         timeFilterSection
                         
-                        // Profile completion alert
-                        if profileManager.userProfile == nil && !profileManager.isLoading {
-                            profileIncompleteSection
+                        // UPDATED: Profile state handling
+                        // Profile state handling
+                        if profileManager.isNewUser {
+                            // Show welcome card for new users
+                            WelcomeNewUserCard {
+                                showProfile = true
+                            }
+                        } else if profileManager.userProfile == nil && !profileManager.isLoading && profileManager.errorMessage != nil {
+                            // Only show error if there's an actual error (not just missing profile)
+                            if let errorMessage = profileManager.errorMessage {
+                                profileErrorSection(errorMessage)
+                            }
                         }
                         
                         // Network/Profile Status
                         if let networkError = networkError {
                             networkErrorSection(networkError)
-                        } else if profileManager.isLoading && profileManager.userProfile == nil {
+                        } else if profileManager.isLoading && profileManager.userProfile == nil && !profileManager.isNewUser {
                             profileLoadingSection
-                        } else if let errorMessage = profileManager.errorMessage {
-                            profileErrorSection(errorMessage)
                         }
                         
                         // Main Stats Cards with Enhanced UI
@@ -277,8 +288,14 @@ struct DashboardView: View {
                 Text("Set up your profile to get personalized nutrition goals and better tracking.")
             }
             .alert(networkError?.title ?? "Error", isPresented: $showNetworkAlert) {
-                Button("Retry") {
-                    handleNetworkErrorRetry()
+                if networkError == .sessionExpired {
+                    Button("Login") {
+                        session.logout()
+                    }
+                } else {
+                    Button("Retry") {
+                        handleNetworkErrorRetry()
+                    }
                 }
                 Button("Cancel", role: .cancel) {
                     networkError = nil
@@ -318,7 +335,7 @@ struct DashboardView: View {
                         showProfile = true
                     }
                     
-                    // Status indicator
+                    // Status indicator - UPDATED
                     if profileManager.isLoading {
                         Circle()
                             .fill(Color.yellow)
@@ -329,7 +346,14 @@ struct DashboardView: View {
                             .fill(Color.green)
                             .frame(width: 12, height: 12)
                             .offset(x: 16, y: -16)
+                    } else if profileManager.isNewUser {
+                        // Orange indicator for new users
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 12, height: 12)
+                            .offset(x: 16, y: -16)
                     } else {
+                        // Red only for actual errors
                         Circle()
                             .fill(Color.red)
                             .frame(width: 12, height: 12)
@@ -365,47 +389,108 @@ struct DashboardView: View {
         }
     }
     
-    var profileIncompleteSection: some View {
-        HStack {
-            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                .foregroundColor(.orange)
-                .font(.title3)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Complete Your Profile")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
+    // NEW: Welcome Card for New Users
+    struct WelcomeNewUserCard: View {
+        let action: () -> Void
+        
+        var body: some View {
+            VStack(spacing: 20) {
+                // Icon with animation
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.orange.opacity(0.2),
+                                    Color.orange.opacity(0.1)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.orange, .orange.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
                 
-                Text("Set up your nutrition goals for personalized tracking")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                VStack(spacing: 12) {
+                    Text("Welcome to NutriSnap!")
+                        .font(.title3.bold())
+                        .foregroundColor(.white)
+                    
+                    Text("Let's set up your nutrition profile to get personalized recommendations and accurate tracking")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                
+                VStack(spacing: 12) {
+                    // Primary CTA
+                    Button(action: action) {
+                        HStack {
+                            Image(systemName: "arrow.right.circle.fill")
+                            Text("Set Up Profile")
+                        }
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.orange, .orange.opacity(0.8)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .cornerRadius(12)
+                        .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    
+                    Text("Takes less than 2 minutes")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
             }
-            
-            Spacer()
-            
-            Button("Setup") {
-                showProfile = true
-            }
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(28)
+            .frame(maxWidth: .infinity)
             .background(
-                Capsule()
-                    .fill(Color.orange)
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(0.08),
+                                Color.white.opacity(0.04)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.orange.opacity(0.4),
+                                        Color.orange.opacity(0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1.5
+                            )
+                    )
             )
+            .shadow(color: .orange.opacity(0.1), radius: 20, x: 0, y: 10)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.orange.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                )
-        )
     }
     
     var timeFilterSection: some View {
@@ -440,7 +525,7 @@ struct DashboardView: View {
     
     func networkErrorSection(_ error: NetworkError) -> some View {
         HStack {
-            Image(systemName: "wifi.exclamationmark")
+            Image(systemName: error == .sessionExpired ? "exclamationmark.lock.fill" : "wifi.exclamationmark")
                 .foregroundColor(.red)
                 .font(.caption)
             
@@ -457,8 +542,12 @@ struct DashboardView: View {
             
             Spacer()
             
-            Button("Retry") {
-                handleNetworkErrorRetry()
+            Button(error == .sessionExpired ? "Login" : "Retry") {
+                if error == .sessionExpired {
+                    session.logout()
+                } else {
+                    handleNetworkErrorRetry()
+                }
             }
             .font(.caption)
             .foregroundColor(.orange)
@@ -688,14 +777,16 @@ struct DashboardView: View {
     // MARK: - Dynamic Helper Functions for Enhanced Card
     
     private func getCalorieStatusIcon() -> String {
-        if calorieProgress < 0.3 { return "arrow.up.circle.fill" }
+        if profileManager.isNewUser { return "person.crop.circle.badge.plus" }
+        else if calorieProgress < 0.3 { return "arrow.up.circle.fill" }
         else if calorieProgress < 0.7 { return "checkmark.circle.fill" }
         else if calorieProgress < 1.0 { return "exclamationmark.circle.fill" }
         else { return "xmark.circle.fill" }
     }
     
     private func getCalorieStatusMessage() -> String {
-        if calorieProgress < 0.3 { return "Great start! Keep it up" }
+        if profileManager.isNewUser { return "Set up profile for personalized goals" }
+        else if calorieProgress < 0.3 { return "Great start! Keep it up" }
         else if calorieProgress < 0.7 { return "On track for your goal" }
         else if calorieProgress < 1.0 { return "Almost there!" }
         else if calorieProgress < 1.2 { return "Goal achieved!" }
@@ -1117,7 +1208,7 @@ struct DashboardView: View {
         return (calories, protein, carbs, fat, fiber, sugar, sodium)
     }
     
-    // MARK: - All Data Functions (Keeping existing functions unchanged)
+    // MARK: - All Data Functions with JWT Authentication
     
     func initializeDashboard() {
         guard !hasInitialized else { return }
@@ -1127,7 +1218,7 @@ struct DashboardView: View {
         
         loadUserPreferences()
         
-        if profileManager.userProfile == nil {
+        if profileManager.userProfile == nil && !profileManager.isNewUser {
             profileManager.fetchProfile()
         }
         
@@ -1162,6 +1253,7 @@ struct DashboardView: View {
     
     func fetchMeals() {
         guard let userId = getCurrentUserId(),
+              let token = SessionManager.shared.getAuthToken(),
               let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userId)") else {
             networkError = .noInternet
             return
@@ -1174,6 +1266,7 @@ struct DashboardView: View {
         var request = URLRequest(url: url)
         request.timeoutInterval = 45
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
@@ -1195,10 +1288,28 @@ struct DashboardView: View {
                 return
             }
             
+            // Check for error response
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 Meal fetch status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 401 {
+                    DispatchQueue.main.async {
+                        self.networkError = .sessionExpired
+                        self.showNetworkAlert = true
+                    }
+                    return
+                } else if httpResponse.statusCode != 200 {
+                    DispatchQueue.main.async {
+                        self.networkError = .serverError
+                    }
+                    return
+                }
+            }
+            
             do {
                 let decoded = try JSONDecoder().decode([Meal].self, from: data)
                 DispatchQueue.main.async {
-                    // FIXED: Remove duplicates using meal ID instead of timestamp
+                    // Remove duplicates using meal ID
                     var uniqueMeals: [Meal] = []
                     var seenMealIds: Set<String> = []
                     
@@ -1224,6 +1335,7 @@ struct DashboardView: View {
                     print("📊 Before deduplication: \(decoded.count) meals")
                     print("📊 After deduplication: \(uniqueMeals.count) meals")
                     
+                    // Don't calculate totalCalories here - calculateStats() will handle it
                     self.calculateStats()
                     self.calculateWeeklyStats()
                 }
@@ -1238,6 +1350,7 @@ struct DashboardView: View {
     
     func fetchWaterData() {
         guard let userId = getCurrentUserId(),
+              let token = SessionManager.shared.getAuthToken(),
               let url = URL(string: "https://food-app-swift.onrender.com/user-water?user_id=\(userId)") else {
             return
         }
@@ -1245,11 +1358,27 @@ struct DashboardView: View {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
                 print("❌ Water fetch error: \(error?.localizedDescription ?? "Unknown")")
                 return
+            }
+            
+            // Check for error response
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 Water fetch status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 401 {
+                    DispatchQueue.main.async {
+                        self.networkError = .sessionExpired
+                        self.showNetworkAlert = true
+                    }
+                    return
+                } else if httpResponse.statusCode != 200 {
+                    return
+                }
             }
             
             do {
@@ -1267,6 +1396,7 @@ struct DashboardView: View {
     
     func fetchExerciseData() {
         guard let userId = getCurrentUserId(),
+              let token = SessionManager.shared.getAuthToken(),
               let url = URL(string: "https://food-app-swift.onrender.com/user-exercise?user_id=\(userId)") else {
             return
         }
@@ -1274,11 +1404,27 @@ struct DashboardView: View {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
                 print("❌ Exercise fetch error: \(error?.localizedDescription ?? "Unknown")")
                 return
+            }
+            
+            // Check for error response
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 Exercise fetch status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 401 {
+                    DispatchQueue.main.async {
+                        self.networkError = .sessionExpired
+                        self.showNetworkAlert = true
+                    }
+                    return
+                } else if httpResponse.statusCode != 200 {
+                    return
+                }
             }
             
             do {
@@ -1296,6 +1442,7 @@ struct DashboardView: View {
     
     func fetchWeightData() {
         guard let userId = getCurrentUserId(),
+              let token = SessionManager.shared.getAuthToken(),
               let url = URL(string: "https://food-app-swift.onrender.com/user-weight?user_id=\(userId)") else {
             return
         }
@@ -1303,11 +1450,27 @@ struct DashboardView: View {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
                 print("❌ Weight fetch error: \(error?.localizedDescription ?? "Unknown")")
                 return
+            }
+            
+            // Check for error response
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 Weight fetch status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 401 {
+                    DispatchQueue.main.async {
+                        self.networkError = .sessionExpired
+                        self.showNetworkAlert = true
+                    }
+                    return
+                } else if httpResponse.statusCode != 200 {
+                    return
+                }
             }
             
             do {
