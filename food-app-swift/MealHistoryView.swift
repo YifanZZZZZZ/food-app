@@ -47,7 +47,7 @@ struct MealHistoryView: View {
                 .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // Custom Navigation Bar
+                    // Custom Navigation Bar HStack
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Meal History")
