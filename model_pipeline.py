@@ -153,6 +153,52 @@ def full_image_analysis(): #enter your field
     #16. If any error occurs, catch it and return a failure response with error info.
 
 
+def search_recipe(keyword, csv_path="recipes.csv"):
+    """
+    Search for the first matching recipe based on the predicted keyword.
+    Returns a dictionary with dish name, ingredients, and nutrition info.
+    """
+    keyword = keyword.strip().lower()
+
+    try:
+        with open(csv_path, "r", encoding="utf-8", errors="ignore") as file:
+            reader = csv.DictReader(file)
+            if not reader.fieldnames:
+                print("⚠️ CSV file has no headers.")
+                return None
+
+            for row in reader:
+                title = str(row.get(reader.fieldnames[1], "")).lower()
+                if keyword in title:
+                    dish_name = row.get("Name") or row[reader.fieldnames[1]]
+
+                    # Parse ingredients
+                    ingredients = row.get("Ingredients", "")
+                    ingredient_list = [i.strip() for i in ingredients.split(",") if i.strip()]
+
+                    # Parse nutrition
+                    nutrition_text = row.get("Nutrition", "")
+                    nutrition_facts = {}
+                    for line in nutrition_text.splitlines():
+                        parts = [p.strip() for p in line.split('|')]
+                        if len(parts) >= 2:
+                            nutrition_facts[parts[0]] = parts[1]
+
+                    return {
+                        "dish_name": dish_name,
+                        "ingredient_list": ingredient_list,
+                        "nutrition_facts": nutrition_facts
+                    }
+
+        print("🔍 No matching recipe found.")
+        return None
+
+    except FileNotFoundError:
+        print(f"❌ File not found: {csv_path}")
+        return None
+    except Exception as e:
+        print(f"❌ Error in search_recipe(): {e}")
+        return None
 
 
 # Search Recipe
