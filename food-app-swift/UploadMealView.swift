@@ -569,14 +569,27 @@ struct UploadMealView: View {
     }
     
     func compressImage(_ image: UIImage, maxSizeKB: Int = 500) -> Data? {
-        var compression: CGFloat = 0.7
-        var imageData = image.jpegData(compressionQuality: compression)
+        // First resize if image is too large
+        let maxDimension: CGFloat = 1024  // Reduced from default
+        let resized = resizeImage(image, maxDimension: maxDimension) ?? image
         
+        var compression: CGFloat = 0.8  // Start with higher quality
+        var imageData = resized.jpegData(compressionQuality: compression)
+        
+        // Progressively compress until under size limit
         while let data = imageData,
               data.count > maxSizeKB * 1024 && compression > 0.1 {
             compression -= 0.1
-            imageData = image.jpegData(compressionQuality: compression)
+            imageData = resized.jpegData(compressionQuality: compression)
         }
+        
+        // If still too large, resize more aggressively
+        if let data = imageData, data.count > maxSizeKB * 1024 {
+            let smallerImage = resizeImage(resized, maxDimension: 600) ?? resized
+            imageData = smallerImage.jpegData(compressionQuality: 0.5)
+        }
+        
+        print("🎨 Final compression: \(compression), size: \((imageData?.count ?? 0) / 1024) KB")
         
         return imageData
     }
@@ -664,11 +677,20 @@ struct UploadMealView: View {
             return
         }
 
-        let fullImageData = compressImage(selectedImage!, maxSizeKB: 1000)
-        let thumbnailData = compressImage(selectedImage!, maxSizeKB: 100)
+        // Show loading state
+        isLoading = true
+        errorMessage = ""
+        
+        // More aggressive image compression
+        let fullImageData = compressImage(selectedImage!, maxSizeKB: 500)  // Reduced from 1000
+        let thumbnailData = compressImage(selectedImage!, maxSizeKB: 50)   // Reduced from 100
         
         let fullImageBase64 = fullImageData?.base64EncodedString() ?? ""
         let thumbnailBase64 = thumbnailData?.base64EncodedString() ?? ""
+        
+        // Log sizes for debugging
+        print("📸 Full image size: \((fullImageBase64.count / 1024)) KB")
+        print("📸 Thumbnail size: \((thumbnailBase64.count / 1024)) KB")
         
         let visibleIngredientsString = visibleIngredients.map {
             "\($0.name) | \($0.quantity) | \($0.unit) | User edited"
@@ -690,30 +712,12 @@ struct UploadMealView: View {
             "saved_at": ISO8601DateFormatter().string(from: selectedDate)
         ]
 
-        guard let url = URL(string: "https://food-app-swift.onrender.com/save-meal"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            errorMessage = "Failed to prepare meal data"
-            return
-        }
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        let session = URLSession(configuration: config)
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-
-        session.dataTask(with: request) { data, response, error in
+        // Use NetworkManager instead of direct URLSession
+        NetworkManager.shared.saveMeal(payload) { success, error in
             DispatchQueue.main.async {
-                if error != nil {
-                    self.errorMessage = "Failed to save meal"
-                    return
-                }
+                self.isLoading = false
                 
-                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                if success {
                     NotificationCenter.default.post(name: Notification.Name("MealSaved"), object: nil)
                     withAnimation(.spring()) {
                         self.showToast = true
@@ -722,10 +726,21 @@ struct UploadMealView: View {
                         self.dismiss()
                     }
                 } else {
-                    self.errorMessage = "Failed to save meal. Please try again."
+                    // Better error handling
+                    if let errorMsg = error {
+                        if errorMsg.contains("network connection was lost") || errorMsg.contains("-1005") {
+                            self.errorMessage = "Connection lost. The image might be too large. Try taking a lower resolution photo."
+                        } else if errorMsg.contains("timed out") {
+                            self.errorMessage = "Server timeout. Please check your internet connection and try again."
+                        } else {
+                            self.errorMessage = "Failed to save meal: \(errorMsg)"
+                        }
+                    } else {
+                        self.errorMessage = "Failed to save meal. Please try again."
+                    }
                 }
             }
-        }.resume()
+        }
     }
     
     func parseIngredientsToEditable(from text: String) -> [EditableIngredient] {
@@ -941,3 +956,4 @@ struct AnalyzingView: View {
         }
     }
 }
+

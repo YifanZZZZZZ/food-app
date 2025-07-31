@@ -162,12 +162,36 @@ struct MealHistoryView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .onAppear(perform: fetchMeals)
+            .onAppear {
+                print("📱 MealHistoryView appeared")
+                print("🔐 Is logged in: \(SessionManager.shared.isLoggedIn)")
+                print("🆔 User ID: \(SessionManager.shared.userID)")
+                print("🔑 Has token: \(SessionManager.shared.getAuthToken() != nil)")
+                
+                fetchMeals()
+            }
             .refreshable {
                 await fetchMealsAsync()
             }
             .sheet(item: $selectedMeal) { meal in
                 MealDetailView(meal: meal)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Debug") {
+                        print("=== DEBUG INFO ===")
+                        print("User ID: \(SessionManager.shared.userID)")
+                        print("Is Logged In: \(SessionManager.shared.isLoggedIn)")
+                        print("Token exists: \(SessionManager.shared.getAuthToken() != nil)")
+                        
+                        // Test health endpoint
+                        NetworkManager.shared.checkHealth { healthy, status in
+                            print("Health check: \(healthy), status: \(String(describing: status))")
+                        }
+                    }
+                    .foregroundColor(.orange)
+                    .font(.caption)
+                }
             }
         }
     }
@@ -188,48 +212,37 @@ struct MealHistoryView: View {
     }
 
     func fetchMeals() {
-        guard let userID = UserDefaults.standard.string(forKey: "user_id"),
-              !userID.isEmpty,
-              let url = URL(string: "https://food-app-swift.onrender.com/user-meals?user_id=\(userID)") else {
-            errorMessage = "Please log in to view meal history"
-            return
-        }
-
         isLoading = true
         errorMessage = ""
-
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        
+        // Check if user is logged in
+        guard SessionManager.shared.isLoggedIn else {
+            errorMessage = "Please log in to view meal history"
+            isLoading = false
+            return
+        }
+        
+        // Use NetworkManager which handles JWT authentication
+        NetworkManager.shared.getUserMeals { result in
             DispatchQueue.main.async {
                 self.isLoading = false
-            }
-            
-            if let error = error {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Network error: \(error.localizedDescription)"
-                }
-                return
-            }
-
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    self.errorMessage = "No data received"
-                }
-                return
-            }
-            
-            do {
-                let decoded = try JSONDecoder().decode([Meal].self, from: data)
-                DispatchQueue.main.async {
-                    var uniqueMeals: [Meal] = []
-                    var seenTimestamps: Set<String> = []
+                
+                switch result {
+                case .success(let fetchedMeals):
+                    print("✅ Successfully fetched \(fetchedMeals.count) meals")
                     
-                    for meal in decoded {
-                        if let timestamp = meal.saved_at, !seenTimestamps.contains(timestamp) {
-                            seenTimestamps.insert(timestamp)
+                    // Remove duplicates based on meal ID
+                    var uniqueMeals: [Meal] = []
+                    var seenMealIds: Set<String> = []
+                    
+                    for meal in fetchedMeals {
+                        if !seenMealIds.contains(meal._id) {
+                            seenMealIds.insert(meal._id)
                             uniqueMeals.append(meal)
                         }
                     }
                     
+                    // Sort by date (newest first)
                     self.meals = uniqueMeals.sorted { meal1, meal2 in
                         guard let date1 = ISO8601DateFormatter().date(from: meal1.saved_at ?? ""),
                               let date2 = ISO8601DateFormatter().date(from: meal2.saved_at ?? "") else {
@@ -238,35 +251,50 @@ struct MealHistoryView: View {
                         return date1 > date2
                     }
                     
-                    self.totalCalories = self.meals.compactMap {
-                        extractCalories(from: $0.nutrition_info)
+                    // Calculate total calories using the global function from Meal.swift
+                    self.totalCalories = self.meals.compactMap { meal in
+                        extractCalories(from: meal.nutrition_info)  // No self. needed - it's a global function
                     }.reduce(0, +)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Failed to load meal history"
+                    
+                    print("📊 Total calories: \(self.totalCalories)")
+                    
+                case .failure(let error):
+                    print("❌ Failed to load meals: \(error)")
+                    
+                    // Better error handling
+                    if let nsError = error as NSError? {
+                        switch nsError.code {
+                        case 401:
+                            self.errorMessage = "Session expired. Please log in again."
+                            // Optionally trigger logout
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                SessionManager.shared.logout()
+                            }
+                        case -1009:
+                            self.errorMessage = "No internet connection"
+                        case -1001:
+                            self.errorMessage = "Request timed out"
+                        case -1005:
+                            self.errorMessage = "Network connection lost"
+                        default:
+                            self.errorMessage = error.localizedDescription
+                        }
+                    } else {
+                        self.errorMessage = "Failed to load meal history"
+                    }
                 }
             }
-        }.resume()
+        }
     }
     
     func fetchMealsAsync() async {
         await withCheckedContinuation { continuation in
             fetchMeals()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            // Wait a bit longer for the async operation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 continuation.resume()
             }
         }
-    }
-
-    func extractCalories(from text: String) -> Int? {
-        for line in text.split(separator: "\n") {
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-            if parts.count >= 2, parts[0].lowercased().contains("calories") {
-                return Int(parts[1])
-            }
-        }
-        return nil
     }
 }
 
@@ -416,16 +444,6 @@ struct MealHistoryCard: View {
         )
     }
     
-    func extractCalories(from text: String) -> Int? {
-        for line in text.split(separator: "\n") {
-            let parts = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-            if parts.count >= 2, parts[0].lowercased().contains("calories") {
-                return Int(parts[1])
-            }
-        }
-        return nil
-    }
-    
     func formattedTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
@@ -485,21 +503,24 @@ struct ErrorStateView: View {
                 .font(.subheadline)
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal)
             
-            Button(action: retry) {
-                Label("Try Again", systemImage: "arrow.clockwise")
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(
-                            gradient: Gradient(colors: [.orange, .orange.opacity(0.8)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            if !message.contains("Session expired") {
+                Button(action: retry) {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.orange, .orange.opacity(0.8)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .cornerRadius(12)
+                        .cornerRadius(12)
+                }
             }
         }
     }

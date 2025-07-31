@@ -4,24 +4,24 @@ import AuthenticationServices
 struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session = SessionManager.shared
-    
+
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var isSecure = true
     @State private var isConfirmSecure = true
-    
+
     @State private var nameError = ""
     @State private var emailError = ""
     @State private var passwordError = ""
     @State private var confirmPasswordError = ""
     @State private var registrationFailed = false
     @State private var registrationError = ""
-    @State private var navigateToDashboard = false // Changed from navigateToProfile
+    @State private var navigateToDashboard = false
     @State private var isLoading = false
     @State private var agreedToTerms = false
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -36,7 +36,7 @@ struct RegisterView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
-                
+
                 ScrollView {
                     VStack(spacing: 32) {
                         // Header
@@ -65,7 +65,7 @@ struct RegisterView: View {
                             }
                         }
                         .padding(.top, 20)
-                        
+
                         // Registration Form
                         VStack(spacing: 20) {
                             // Name Field
@@ -77,7 +77,7 @@ struct RegisterView: View {
                                 error: $nameError,
                                 validate: validateName
                             )
-                            
+
                             // Email Field
                             FormField(
                                 title: "Email",
@@ -88,7 +88,7 @@ struct RegisterView: View {
                                 validate: validateEmail,
                                 keyboardType: .emailAddress
                             )
-                            
+
                             // Password Field
                             SecureFormField(
                                 title: "Password",
@@ -104,7 +104,7 @@ struct RegisterView: View {
                             if !password.isEmpty {
                                 PasswordStrengthIndicator(password: password)
                             }
-                            
+
                             // Confirm Password Field
                             SecureFormField(
                                 title: "Confirm Password",
@@ -115,7 +115,7 @@ struct RegisterView: View {
                                 error: $confirmPasswordError,
                                 validate: validateConfirmPassword
                             )
-                            
+
                             // Terms and Conditions
                             HStack(alignment: .top, spacing: 12) {
                                 Button(action: { agreedToTerms.toggle() }) {
@@ -141,7 +141,7 @@ struct RegisterView: View {
                                 
                                 Spacer()
                             }
-                            
+
                             // Register Button
                             Button(action: {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -177,11 +177,11 @@ struct RegisterView: View {
                                 .opacity(agreedToTerms ? 1.0 : 0.6)
                             }
                             .disabled(isLoading || !agreedToTerms)
-                            
+
                             if registrationFailed {
                                 ErrorCard(message: registrationError)
                             }
-                            
+
                             // Divider
                             HStack {
                                 Rectangle()
@@ -198,13 +198,13 @@ struct RegisterView: View {
                                     .frame(height: 1)
                             }
                             .padding(.vertical, 8)
-                            
+
                             // Social Registration
                             VStack(spacing: 12) {
                                 SignInWithAppleButton(.signUp, onRequest: { _ in }, onCompletion: { _ in })
                                     .frame(height: 50)
                                     .cornerRadius(12)
-                                
+
                                 Button(action: {}) {
                                     HStack {
                                         Image(systemName: "globe")
@@ -224,7 +224,7 @@ struct RegisterView: View {
                                     )
                                 }
                             }
-                            
+
                             // Login Link
                             HStack(spacing: 4) {
                                 Text("Already have an account?")
@@ -251,7 +251,7 @@ struct RegisterView: View {
             }
         }
     }
-    
+
     // MARK: - Validation Functions
     
     func validateName() {
@@ -259,15 +259,15 @@ struct RegisterView: View {
             nameError = name.isEmpty ? "Name is required" : ""
         }
     }
-    
+
     func validateEmail() {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         withAnimation(.easeInOut(duration: 0.2)) {
             emailError = trimmed.isEmpty ? "Email is required" :
-            (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
+                (!trimmed.contains("@") || !trimmed.contains(".")) ? "Enter a valid email" : ""
         }
     }
-    
+
     func validatePassword() {
         withAnimation(.easeInOut(duration: 0.2)) {
             if password.isEmpty {
@@ -279,13 +279,13 @@ struct RegisterView: View {
             }
         }
     }
-    
+
     func validateConfirmPassword() {
         withAnimation(.easeInOut(duration: 0.2)) {
             confirmPasswordError = confirmPassword != password ? "Passwords do not match" : ""
         }
     }
-    
+
     func validateAll() {
         validateName()
         validateEmail()
@@ -297,11 +297,11 @@ struct RegisterView: View {
             registrationFailed = true
         }
     }
-    
+
     func allValid() -> Bool {
         nameError.isEmpty && emailError.isEmpty && passwordError.isEmpty && confirmPasswordError.isEmpty
     }
-    
+
     // MARK: - API Call
     
     func attemptRegister() {
@@ -316,7 +316,6 @@ struct RegisterView: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        // Fix: Proper closure syntax
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 self.isLoading = false
@@ -347,7 +346,6 @@ struct RegisterView: View {
                 
                 // Decode the response properly
                 do {
-                    // Fix: Use RegisterResponse instead of RegisterResponseWithToken
                     let response = try JSONDecoder().decode(RegisterResponse.self, from: data)
                     withAnimation(.spring()) {
                         self.session.login(id: response.user_id, name: response.name, token: response.token)
@@ -358,8 +356,12 @@ struct RegisterView: View {
                     self.registrationError = "Unexpected error. Please try again."
                 }
             }
-        }.resume() // Make sure .resume() is here
+        }.resume()
     }
+}
+
+// Supporting Views (keep existing - FormField, SecureFormField, PasswordStrengthIndicator, ErrorCard)
+// ... (rest of the supporting views remain unchanged)
     
     // Supporting Views
     
@@ -533,4 +535,4 @@ struct RegisterView: View {
             )
         }
     }
-}
+

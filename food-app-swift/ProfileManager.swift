@@ -1,10 +1,3 @@
-//
-//  ProfileManager.swift
-//  food-app-swift
-//
-//  Created by Utsav Doshi on 7/13/25.
-//
-
 import Foundation
 import Combine
 
@@ -15,6 +8,7 @@ class ProfileManager: ObservableObject {
     @Published var isLoading = false
     @Published var lastSyncDate: Date?
     @Published var errorMessage: String?
+    @Published var isNewUser = false  // NEW: Track if this is a new user without profile
     
     private let baseURL = "https://food-app-swift.onrender.com"
     private var cancellables = Set<AnyCancellable>()
@@ -47,6 +41,7 @@ class ProfileManager: ObservableObject {
         guard !currentUserId.isEmpty else {
             print("❌ No user ID available for profile fetch")
             errorMessage = "No user ID available"
+            isNewUser = false
             return
         }
         
@@ -60,6 +55,7 @@ class ProfileManager: ObservableObject {
             print("🔄 Different user detected, clearing old profile")
             userProfile = nil
             lastSyncDate = nil
+            isNewUser = false
             clearCachedProfile()
         }
         
@@ -100,17 +96,30 @@ class ProfileManager: ObservableObject {
         guard let url = URL(string: "\(baseURL)/get-profile?user_id=\(userId)") else {
             print("❌ Invalid profile URL")
             errorMessage = "Invalid URL"
+            isNewUser = false
+            return
+        }
+        
+        // Get the JWT token
+        guard let token = SessionManager.shared.getAuthToken() else {
+            print("❌ No authentication token available")
+            errorMessage = "Authentication required - please log in again"
+            isNewUser = false
             return
         }
         
         isLoading = true
         errorMessage = nil
+        isNewUser = false  // Reset state
         print("🔄 Fetching profile from MongoDB for user: \(userId) (Attempt \(retryCount + 1)/\(maxRetries))")
         
         var request = URLRequest(url: url)
         request.timeoutInterval = 45
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        // Add JWT token to Authorization header
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         currentFetchTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
@@ -127,6 +136,7 @@ class ProfileManager: ObservableObject {
                     } else {
                         self?.errorMessage = "Network error: \(error.localizedDescription)"
                         self?.retryCount = 0
+                        self?.isNewUser = false
                     }
                     return
                 }
@@ -134,6 +144,7 @@ class ProfileManager: ObservableObject {
                 guard let data = data else {
                     print("❌ No profile data received")
                     self?.errorMessage = "No data received"
+                    self?.isNewUser = false
                     return
                 }
                 
@@ -143,21 +154,33 @@ class ProfileManager: ObservableObject {
                     switch httpResponse.statusCode {
                     case 200:
                         self?.handleSuccessfulResponse(data: data, userId: userId)
+                        self?.isNewUser = false
+                    case 401:
+                        print("❌ Unauthorized - token may be expired")
+                        self?.errorMessage = "Session expired - please log in again"
+                        self?.retryCount = 0
+                        self?.isNewUser = false
+                        // Could trigger logout here if needed
                     case 404:
-                        print("⚠️ Profile not found for user \(userId) - user needs to complete setup")
+                        // This is EXPECTED for new users - not an error!
+                        print("ℹ️ No profile found for user \(userId) - new user detected")
                         self?.userProfile = nil
                         self?.clearCachedProfile()
-                        self?.errorMessage = "Profile not found - please complete setup"
+                        self?.errorMessage = nil  // Don't show error for new users
                         self?.retryCount = 0
+                        self?.isNewUser = true  // Mark as new user
                     case 500...599:
                         self?.handleServerError(userId: userId)
+                        self?.isNewUser = false
                     default:
                         print("❌ Profile fetch failed with status: \(httpResponse.statusCode)")
                         self?.errorMessage = "Server error (\(httpResponse.statusCode))"
                         self?.retryCount = 0
+                        self?.isNewUser = false
                     }
                 } else {
                     self?.errorMessage = "Invalid response"
+                    self?.isNewUser = false
                 }
             }
         }
@@ -176,6 +199,7 @@ class ProfileManager: ObservableObject {
             self.lastSyncDate = Date()
             self.errorMessage = nil
             self.retryCount = 0
+            self.isNewUser = false  // Not a new user anymore
             
             // Cache the new profile
             self.cacheProfile(profile)
@@ -187,6 +211,7 @@ class ProfileManager: ObservableObject {
                 print("📄 Raw response: \(jsonString)")
             }
             self.errorMessage = "Data parsing error"
+            self.isNewUser = false
         }
     }
     
@@ -202,6 +227,7 @@ class ProfileManager: ObservableObject {
             print("❌ Max retries reached for profile fetch")
             errorMessage = "Connection timeout. Please check your internet connection."
             retryCount = 0
+            isNewUser = false
         }
     }
     
@@ -217,12 +243,19 @@ class ProfileManager: ObservableObject {
             print("❌ Max retries reached for server error")
             errorMessage = "Server temporarily unavailable"
             retryCount = 0
+            isNewUser = false
         }
     }
     
     func saveProfile(_ profile: UserProfile, completion: @escaping (Bool, String?) -> Void) {
         guard let url = URL(string: "\(baseURL)/save-profile") else {
             completion(false, "Invalid URL")
+            return
+        }
+        
+        // Get the JWT token
+        guard let token = SessionManager.shared.getAuthToken() else {
+            completion(false, "Authentication required - please log in again")
             return
         }
         
@@ -252,6 +285,10 @@ class ProfileManager: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        // Add JWT token to Authorization header
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
         request.httpBody = jsonData
         request.timeoutInterval = 45
         
@@ -275,10 +312,14 @@ class ProfileManager: ObservableObject {
                         self?.userProfile = profile
                         self?.lastSyncDate = Date()
                         self?.errorMessage = nil
+                        self?.isNewUser = false  // Not a new user anymore
                         self?.cacheProfile(profile)
                         self?.syncToUserDefaults(profile)
                         
                         completion(true, nil)
+                    } else if httpResponse.statusCode == 401 {
+                        print("❌ Unauthorized - token may be expired")
+                        completion(false, "Session expired - please log in again")
                     } else {
                         var errorMessage = "Failed to save profile"
                         
@@ -304,6 +345,7 @@ class ProfileManager: ObservableObject {
         lastSyncDate = nil
         errorMessage = nil
         retryCount = 0
+        isNewUser = false
         clearCachedProfile()
         clearUserDefaults()
         print("🗑️ Profile data cleared")
@@ -342,6 +384,7 @@ class ProfileManager: ObservableObject {
            Date().timeIntervalSince(cacheDate) < 3600 {
             self.userProfile = profile
             self.lastSyncDate = cacheDate
+            self.isNewUser = false
             print("📱 Loaded cached profile for user \(currentUserId) (cached: \(cacheDate))")
         } else {
             print("⏰ Cached profile expired, will fetch fresh data")
@@ -373,7 +416,7 @@ class ProfileManager: ObservableObject {
     }
 }
 
-// MARK: - Profile Data Model
+// MARK: - Profile Data Model (keep existing)
 
 struct UserProfile: Codable, Identifiable, Equatable {
     let _id: String?
