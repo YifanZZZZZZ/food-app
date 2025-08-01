@@ -17,6 +17,7 @@ struct ProfileView: View {
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
     @State private var hasAppeared = false
+    @State private var showHelpSupport = false  // NEW: For help & support sheet
     
     var body: some View {
         NavigationView {
@@ -200,6 +201,9 @@ struct ProfileView: View {
                         profileManager.fetchProfile(force: true)
                     }
             }
+            .sheet(isPresented: $showHelpSupport) {
+                HelpSupportView()
+            }
             .refreshable {
                 await refreshProfile()
             }
@@ -333,20 +337,10 @@ struct ProfileView: View {
                     .background(Color.white.opacity(0.1))
                 
                 SettingsRow(
-                    icon: "bell.fill",
-                    title: "Notifications",
-                    subtitle: "Meal reminders and tips",
-                    action: { /* TODO: Add notifications settings */ }
-                )
-                
-                Divider()
-                    .background(Color.white.opacity(0.1))
-                
-                SettingsRow(
                     icon: "questionmark.circle.fill",
                     title: "Help & Support",
-                    subtitle: "FAQ and contact support",
-                    action: { /* TODO: Add help */ }
+                    subtitle: "Privacy Policy, FAQ and support",
+                    action: { showHelpSupport = true }
                 )
             }
             .background(
@@ -434,6 +428,390 @@ struct ProfileView: View {
             self.isLoggingOut = false
             self.dismiss()
         }
+    }
+}
+
+// MARK: - NEW: Help & Support View
+
+struct HelpSupportView: View {
+    @Environment(\.dismiss) var dismiss
+    @State private var showFullPrivacyPolicy = false
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                backgroundGradient
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        headerSection
+                        privacyPolicySection
+                        supportSection
+                        appInfoSection
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .preferredColorScheme(.dark)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(.orange)
+                }
+            }
+            .sheet(isPresented: $showFullPrivacyPolicy) {
+                FullPrivacyPolicyView()
+            }
+        }
+    }
+    
+    // MARK: - View Components
+    
+    private var backgroundGradient: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.black,
+                Color.black.opacity(0.95),
+                Color(red: 0.1, green: 0.1, blue: 0.15)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+    
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Help & Support")
+                .font(.largeTitle.bold())
+                .foregroundColor(.white)
+            
+            Text("Privacy Policy and Support Information")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+        }
+        .padding(.top, 20)
+    }
+    
+    private var privacyPolicySection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            privacyPolicyHeader
+            privacyPolicyPoints
+            privacyPolicyButtons
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+    
+    private var privacyPolicyHeader: some View {
+        HStack {
+            Image(systemName: "shield.fill")
+                .foregroundColor(.blue)
+            Text("Privacy Policy Summary")
+                .font(.headline)
+                .foregroundColor(.white)
+        }
+    }
+    
+    private var privacyPolicyPoints: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PrivacyPolicyPoint(
+                icon: "envelope.fill",
+                title: "Data Collection",
+                description: "We collect your email address and usage data to provide and improve our service."
+            )
+            
+            PrivacyPolicyPoint(
+                icon: "camera.fill",
+                title: "Photos & Location",
+                description: "We access your camera and photo library only to analyze meal photos for nutrition tracking."
+            )
+            
+            PrivacyPolicyPoint(
+                icon: "lock.fill",
+                title: "Data Security",
+                description: "Your personal data is encrypted and stored securely. We never sell your information to third parties."
+            )
+            
+            PrivacyPolicyPoint(
+                icon: "trash.fill",
+                title: "Data Deletion",
+                description: "You can delete your account and all associated data at any time through the app settings."
+            )
+            
+            PrivacyPolicyPoint(
+                icon: "person.badge.shield.checkmark.fill",
+                title: "Children's Privacy",
+                description: "Our service is not intended for users under 13. We don't knowingly collect data from children."
+            )
+        }
+    }
+    
+    private var privacyPolicyButtons: some View {
+        VStack(spacing: 12) {
+            fullPolicyButton
+            externalLinkButton
+        }
+    }
+    
+    private var fullPolicyButton: some View {
+        Button(action: {
+            showFullPrivacyPolicy = true
+        }) {
+            HStack {
+                Image(systemName: "doc.text.fill")
+                Text("View Full Privacy Policy")
+                Spacer()
+                Image(systemName: "chevron.right")
+            }
+            .foregroundColor(.blue)
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.blue.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+    }
+    
+    private var externalLinkButton: some View {
+        Button(action: {
+            if let url = URL(string: "https://www.termsfeed.com/live/d4b4e1ed-8150-4ccb-a430-340180b7bc9d") {
+                UIApplication.shared.open(url)
+            }
+        }) {
+            HStack {
+                Image(systemName: "link")
+                Text("For more details")
+                Spacer()
+                Image(systemName: "arrow.up.right")
+            }
+            .foregroundColor(.orange)
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.orange.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+    }
+    
+    private var supportSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            supportHeader
+            supportButtons
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+    
+    private var supportHeader: some View {
+        HStack {
+            Image(systemName: "questionmark.circle.fill")
+                .foregroundColor(.green)
+            Text("Support & Contact")
+                .font(.headline)
+                .foregroundColor(.white)
+        }
+    }
+    
+    private var supportButtons: some View {
+        VStack(spacing: 12) {
+            SupportContactRow(
+                icon: "envelope.fill",
+                title: "Email Support",
+                subtitle: "nutrisnap@gmail.com",
+                action: {
+                    if let url = URL(string: "mailto:nutrisnap@gmail.com") {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            )
+            
+            SupportContactRow(
+                icon: "star.fill",
+                title: "Rate the App",
+                subtitle: "Help us improve with your feedback",
+                action: {
+                    // Can add App Store rating functionality later
+                }
+            )
+        }
+    }
+    
+    private var appInfoSection: some View {
+        VStack(spacing: 8) {
+            Text("NutriSnap v1.0.0")
+                .font(.caption)
+                .foregroundColor(.gray)
+            
+            Text("AI-Powered Nutrition Tracking")
+                .font(.caption2)
+                .foregroundColor(.gray.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 40)
+    }
+}
+
+// MARK: - Supporting Views for Help & Support
+
+struct PrivacyPolicyPoint: View {
+    let icon: String
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.blue)
+                .font(.title3)
+                .frame(width: 24)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+struct SupportContactRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .foregroundColor(.green)
+                    .font(.title3)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct FullPrivacyPolicyView: View {
+    @Environment(\.dismiss) var dismiss
+    
+    let privacyPolicyText = """
+    Privacy Policy for NutriSnap
+
+    Last updated: August 01, 2025
+
+    This Privacy Policy describes Our policies and procedures on the collection, use and disclosure of Your information when You use the Service and tells You about Your privacy rights and how the law protects You.
+
+    We use Your Personal data to provide and improve the Service. By using the Service, You agree to the collection and use of information in accordance with this Privacy Policy.
+
+    COLLECTING AND USING YOUR PERSONAL DATA
+
+    Types of Data Collected:
+    • Email address
+    • Usage Data (IP address, browser type, device information)
+    • Photos and camera access (for meal analysis)
+    • Location information (with your permission)
+
+    How We Use Your Data:
+    • To provide and maintain our Service
+    • To manage your account and registration
+    • To contact you about updates and security notifications
+    • To analyze usage and improve our Service
+    • For business transfers or legal requirements
+
+    DATA SECURITY
+    The security of Your Personal Data is important to Us. While We strive to use commercially acceptable means to protect Your Personal Data, We cannot guarantee its absolute security.
+
+    YOUR RIGHTS
+    • Right to access your personal data
+    • Right to correct or update your information
+    • Right to delete your personal data
+    • Right to data portability
+
+    CHILDREN'S PRIVACY
+    Our Service does not address anyone under the age of 13. We do not knowingly collect personally identifiable information from anyone under the age of 13.
+
+    CONTACT US
+    If you have any questions about this Privacy Policy, You can contact us:
+    • By email: nutrisnap@gmail.com
+
+    For the complete Privacy Policy, visit our website or contact us directly.
+    """
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(privacyPolicyText)
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                        .padding()
+                }
+            }
+            .background(Color.black)
+            .navigationTitle("Privacy Policy")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(.orange)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 

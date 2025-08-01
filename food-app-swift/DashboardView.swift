@@ -1132,7 +1132,8 @@ struct DashboardView: View {
         """
     }
     
-    // Enhanced nutrition extraction function
+    // Replace extractAllNutrients in DashboardView.swift with this fixed version:
+
     func extractAllNutrients(from text: String) -> (calories: Int, protein: Int, carbs: Int, fat: Int, fiber: Int, sugar: Int, sodium: Int) {
         var calories = 0, protein = 0, carbs = 0, fat = 0, fiber = 0, sugar = 0, sodium = 0
         
@@ -1159,8 +1160,12 @@ struct DashboardView: View {
                     continue
                 }
                 
-                if let value = Int(parts[1]) {
-                    
+                // Clean the value - remove commas and extra spaces
+                let cleanedValue = parts[1]
+                    .replacingOccurrences(of: ",", with: "")
+                    .replacingOccurrences(of: " ", with: "")
+                
+                if let value = Int(cleanedValue) {
                     // Calories
                     if name.contains("calorie") || name.contains("kcal") || name.contains("energy") {
                         calories += value
@@ -1199,7 +1204,7 @@ struct DashboardView: View {
                 } else {
                     // Log lines where we couldn't parse the value
                     if !name.contains("---") && !name.isEmpty {
-                        print("⚠️ Could not parse value from line: \(trimmedLine)")
+                        print("⚠️ Could not parse value '\(cleanedValue)' from line: \(trimmedLine)")
                     }
                 }
             }
@@ -1679,12 +1684,26 @@ struct DashboardView: View {
         return UserDefaults.standard.string(forKey: "user_id")
     }
     
+    // Replace the isSameDay function in DashboardView.swift with this simpler timezone-aware version:
+
     func isSameDay(_ dateString: String?) -> Bool {
-        guard let dateString = dateString,
-              let date = ISO8601DateFormatter().date(from: dateString) else {
+        guard let dateString = dateString else {
             return false
         }
-        return Calendar.current.isDate(date, inSameDayAs: Date())
+        
+        let formatter = ISO8601DateFormatter()
+        guard let mealDate = formatter.date(from: dateString) else {
+            print("⚠️ Could not parse date: \(dateString)")
+            return false
+        }
+        
+        let calendar = Calendar.current
+        let today = Date()
+        
+        // This comparison automatically handles timezone differences
+        let isSame = calendar.isDate(mealDate, inSameDayAs: today)
+        
+        return isSame
     }
     
     func daysInCurrentMonth() -> Int {

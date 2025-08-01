@@ -44,11 +44,17 @@ func parseNutritionLines(from text: String) -> [String] {
     }
 }
 
+// In Meal.swift, replace the extractCalories function with this:
+
 func extractCalories(from text: String) -> Int? {
     for line in text.split(separator: "\n") {
         let parts = line.split(separator: "|")
         if parts.count >= 2, parts[0].lowercased().contains("calories") {
-            return Int(parts[1].trimmingCharacters(in: .whitespaces))
+            // Get the value and clean it
+            let valueString = parts[1].trimmingCharacters(in: .whitespaces)
+            // Remove commas from numbers like "1,200" -> "1200"
+            let cleanedValue = valueString.replacingOccurrences(of: ",", with: "")
+            return Int(cleanedValue)
         }
     }
     return nil
