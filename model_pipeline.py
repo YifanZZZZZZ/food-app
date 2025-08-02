@@ -32,6 +32,9 @@ client = MongoClient(mongo_uri)
 db = client[mongo_db]
 meals_collection = db["meals"]
 
+
+
+
 def encode_image(image_path):
     """Encode image to base64"""
     with open(image_path, "rb") as image_file:
@@ -113,30 +116,37 @@ def full_image_analysis(image_path, user_id):
         }
 
 
-def search_recipe(keyword, filename='./recipes.csv'):
+def search_recipe(keyword, mongo_uri = os.getenv("MONGO_URI"), db_name=os.getenv("MONGO_DB"), collection_name="recipes"):
     """
-    Search for the first recipe containing the keyword in its name (case-insensitive).
+    Search for the first recipe in MongoDB whose 'Name' contains the keyword (case-insensitive).
     Returns a dictionary of the recipe or None if not found.
     """
     keyword = keyword.lower()
 
     try:
-        with open(filename, newline='', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
-            if not reader.fieldnames:
-                print("The CSV file is empty.")
-                return None
+        # Connect to MongoDB
+        client = MongoClient(mongo_uri)
+        db = client[db_name]
+        collection = db[collection_name]
 
-            for row in reader:
-                if keyword in row.get('Name', '').lower():
-                    return row  # Return the first match immediately
+        # Search for the first match using case-insensitive regex
+        result = collection.find_one({
+            "Name": {
+                "$regex": fr"\b{keyword}\b",  # use raw string with word boundaries
+                "$options": "i"
+            }
+        })
 
-    except FileNotFoundError:
-        print(f"File '{filename}' not found.")
+        if result:
+            return result
+        else:
+            print("No recipe found with the given keyword.")
+
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred while connecting to MongoDB: {e}")
 
-    return None  # No match found or an error occurred
+    return None
+
 
 def recipe_classification(image_path):
     try:
@@ -228,3 +238,5 @@ def validate_image_for_analysis(image_path):
             
     except Exception as e:
         return False, f"Invalid image: {str(e)}"
+
+

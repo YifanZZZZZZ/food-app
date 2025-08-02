@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 from pymongo import MongoClient
 from bson import ObjectId
-from model_pipeline import full_image_analysis, validate_image_for_analysis
+from model_pipeline import full_image_analysis, validate_image_for_analysis, search_recipe
 import base64
 import traceback
 import time
@@ -12,7 +12,6 @@ from io import BytesIO
 from PIL import Image
 import hashlib
 from datetime import datetime
-import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -44,6 +43,7 @@ meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
 # Debug Process
 print("✅ Connected to MongoDB URI:", os.getenv("MONGO_URI"))
 print("✅ Using DB name:", db.name)
+
 
 @app.route("/ping", methods=["GET"])
 def ping():
@@ -854,3 +854,4 @@ if __name__ == "__main__":
     print(f"🤖 Using Gemini AI with tested prompts")
     print(f"📱 Compatible with Swift frontend")
     app.run(host="0.0.0.0", port=port, threaded=True)
+
