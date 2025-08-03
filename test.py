@@ -3,12 +3,12 @@ from pymongo import MongoClient
 from tqdm import tqdm
 
 # MongoDB Atlas connection
-MONGO_URI = "mongodb+srv://testuser:test123@cluster0.x4c2mxo.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # e.g. "mongodb+srv://<user>:<pass>@cluster.mongodb.net/"
+MONGO_URI = "your_mongo_url"  # e.g. "mongodb+srv://<user>:<pass>@cluster.mongodb.net/"
 DATABASE_NAME = "food-app-recipe"
 COLLECTION_NAME = "recipes"
 
 # Path to CSV
-csv_file = "/Users/zhangyifan/food-app-recipe-v2/recipes.csv"
+csv_file = "your_path_to_csv"
 
 # Columns to keep
 columns_to_keep = [
@@ -38,8 +38,8 @@ db = client[DATABASE_NAME]
 collection = db[COLLECTION_NAME]
 print("✅ Connected to MongoDB.")
 
-# Optional: clear collection before insert (use with caution!)
-# collection.delete_many({})
+# Clean any previous dataset
+collection.delete_many({})
 
 # Insert with progress bar
 inserted_ids = []
