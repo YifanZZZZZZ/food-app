@@ -24,6 +24,10 @@ struct ContentView: View {
                         // Redirect to profile setup for new users
                         ProfileSetupView()
                             .navigationBarHidden(true)
+                            .onDisappear {
+                                // Clear the new registration flag after profile setup
+                                SessionManager.shared.clearNewRegistrationFlag()
+                            }
                     } else {
                         // Normal dashboard for users with profiles
                         DashboardView()
@@ -38,29 +42,58 @@ struct ContentView: View {
                 OnboardingView()
                     .navigationBarBackButtonHidden(true)
                     .onAppear {
-                        session.resetNavigationFlag()
+                        SessionManager.shared.resetNavigationFlag()
                     }
             }
         }
         .onAppear {
-            checkProfileStatus()
+            performInitialChecks()
+        }
+    }
+    
+    func performInitialChecks() {
+        // Validate session on app launch
+        if SessionManager.shared.isLoggedIn {
+            let isValid = SessionManager.shared.validateSession()
+            if !isValid {
+                print("❌ Invalid session detected on app launch")
+                // Session validation failed, user will be logged out
+            } else {
+                // Session is valid, check profile status
+                checkProfileStatus()
+            }
+        } else {
+            // Not logged in, no need to check profile
+            checkingProfile = false
         }
     }
     
     func checkProfileStatus() {
-        guard session.isLoggedIn else {
+        guard SessionManager.shared.isLoggedIn else {
             checkingProfile = false
             return
         }
         
-        // Check if profile exists
-        profileManager.fetchProfile(force: true)
+        print("🔍 Checking profile status...")
+        print("🆕 Is new registration: \(SessionManager.shared.isNewRegistration)")
         
-        // Wait a moment for the fetch to complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        // Only force profile setup for NEW registrations
+        if SessionManager.shared.isNewRegistration {
+            print("🆕 New registration detected - forcing profile setup")
             checkingProfile = false
-            needsProfileSetup = profileManager.userProfile == nil && !profileManager.isLoading
+            needsProfileSetup = true
+            return
         }
+        
+        // For existing users, just go to dashboard
+        // The dashboard will show the welcome card if they don't have a profile
+        print("👤 Existing user - proceeding to dashboard")
+        checkingProfile = false
+        needsProfileSetup = false
+        
+        // Let ProfileManager fetch the profile in the background
+        // Dashboard will handle showing the welcome card if needed
+        profileManager.fetchProfile(force: false)
     }
 }
 

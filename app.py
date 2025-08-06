@@ -106,7 +106,7 @@ except Exception as e:
 def db_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not client or not db:
+        if client is None or db is None:  # Changed from 'if not client or not db:'
             return jsonify({'error': 'Database connection not available'}), 503
         return f(*args, **kwargs)
     return decorated

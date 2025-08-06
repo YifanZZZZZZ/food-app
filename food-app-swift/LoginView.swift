@@ -318,7 +318,7 @@ struct LoginView: View {
                 
                 // Save user session with JWT token
                 SessionManager.shared.login(id: userId, name: name, token: token)
-                
+
                 // Navigate to dashboard
                 withAnimation(.spring()) {
                     self.navigateToDashboard = true

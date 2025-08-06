@@ -348,7 +348,7 @@ struct RegisterView: View {
                 do {
                     let response = try JSONDecoder().decode(RegisterResponse.self, from: data)
                     withAnimation(.spring()) {
-                        self.session.login(id: response.user_id, name: response.name, token: response.token)
+                        self.session.login(id: response.user_id, name: response.name, token: response.token, isNewUser: true)
                         self.navigateToDashboard = true
                     }
                 } catch {
