@@ -26,29 +26,90 @@ CORS(app, supports_credentials=True)
 app.config['SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-this')
 app.config['JWT_EXPIRATION_HOURS'] = 24 * 7  # 7 days
 
-# Configure MongoDB with connection pooling
-client = MongoClient(
-    os.getenv("MONGO_URI"),
-    maxPoolSize=50,
-    minPoolSize=10,
-    maxIdleTimeMS=30000,
-    serverSelectionTimeoutMS=5000
-)
-db = client[os.getenv("MONGO_DB", "food-app-swift")]
+# Configure MongoDB with error handling and retry logic
+def init_mongodb():
+    """Initialize MongoDB connection with comprehensive error handling"""
+    try:
+        mongo_uri = os.getenv("MONGO_URI")
+        if not mongo_uri:
+            print("❌ MONGO_URI environment variable not set!")
+            return None, None, None, None, None
+        
+        print(f"🔍 Attempting MongoDB connection...")
+        print(f"🔍 URI format check: {mongo_uri.startswith('mongodb')}")
+        
+        client = MongoClient(
+            mongo_uri,
+            maxPoolSize=10,
+            minPoolSize=1,
+            maxIdleTimeMS=45000,
+            serverSelectionTimeoutMS=15000,  # Increased timeout
+            connectTimeoutMS=15000,
+            socketTimeoutMS=15000,
+            retryWrites=True,
+            w='majority'
+        )
+        
+        # Test connection with explicit timeout
+        client.admin.command('ping')
+        print("✅ MongoDB connected successfully")
+        
+        db = client[os.getenv("MONGO_DB", "food-app-swift")]
+        
+        # Initialize collections
+        users_collection = db["users"]
+        profiles_collection = db["profiles"] 
+        meals_collection = db["meals"]
+        
+        return client, db, users_collection, profiles_collection, meals_collection
+        
+    except Exception as e:
+        print(f"❌ MongoDB connection failed: {str(e)}")
+        print(f"❌ Error type: {type(e).__name__}")
+        # Return dummy objects to prevent app crash
+        return None, None, None, None, None
 
-# Create indexes for better performance
-users_collection = db["users"]
-users_collection.create_index("email", unique=True)
+# Initialize MongoDB
+client, db, users_collection, profiles_collection, meals_collection = init_mongodb()
 
-profiles_collection = db["profiles"]
-profiles_collection.create_index("user_id")
-
-meals_collection = db["meals"]
-meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
+# Only create indexes if connection successful
+if client is not None and users_collection is not None:
+    try:
+        users_collection.create_index("email", unique=True)
+        profiles_collection.create_index("user_id")
+        meals_collection.create_index([("user_id", 1), ("saved_at", -1)])
+        print("✅ Database indexes created successfully")
+    except Exception as e:
+        print(f"⚠️ Index creation failed (may already exist): {str(e)}")
+else:
+    print("⚠️ MongoDB not available - app will run but database operations will fail")
+    # Create dummy collections to prevent import errors
+    users_collection = None
+    profiles_collection = None
+    meals_collection = None
 
 # Configure Gemini for nutrition recalculation
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+try:
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if gemini_api_key:
+        genai.configure(api_key=gemini_api_key)
+        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        print("✅ Gemini AI configured successfully")
+    else:
+        print("⚠️ GEMINI_API_KEY not found - AI features will be disabled")
+        gemini_model = None
+except Exception as e:
+    print(f"❌ Gemini configuration failed: {str(e)}")
+    gemini_model = None
+
+# Database connection checker decorator
+def db_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not client or not db:
+            return jsonify({'error': 'Database connection not available'}), 503
+        return f(*args, **kwargs)
+    return decorated
 
 # HTTPS Enforcement Middleware
 @app.before_request
@@ -113,19 +174,26 @@ def home():
 def health():
     try:
         # Check MongoDB connection
-        client.admin.command('ping')
+        mongodb_status = "disconnected"
+        if client:
+            try:
+                client.admin.command('ping')
+                mongodb_status = "connected"
+            except:
+                mongodb_status = "connection_failed"
         
         # Check Gemini API key
         gemini_ok = bool(os.getenv("GEMINI_API_KEY"))
         
         return jsonify({
-            "status": "healthy",
-            "mongodb": "connected",
+            "status": "healthy" if mongodb_status == "connected" else "degraded",
+            "mongodb": mongodb_status,
             "gemini": "configured" if gemini_ok else "missing API key",
             "security": "jwt+bcrypt",
             "https": "enforced" if os.getenv('ENVIRONMENT') == 'production' else "development",
             "timestamp": datetime.now().isoformat()
-        }), 200
+        }), 200 if mongodb_status == "connected" else 503
+        
     except Exception as e:
         return jsonify({
             "status": "unhealthy",
@@ -133,7 +201,20 @@ def health():
             "timestamp": datetime.now().isoformat()
         }), 503
 
+@app.route("/debug-env", methods=["GET"])
+def debug_env():
+    """Debug endpoint to check environment variables"""
+    return jsonify({
+        "has_mongo_uri": bool(os.getenv("MONGO_URI")),
+        "mongo_uri_prefix": os.getenv("MONGO_URI", "")[:50] if os.getenv("MONGO_URI") else "None",
+        "has_gemini_key": bool(os.getenv("GEMINI_API_KEY")),
+        "environment": os.getenv("ENVIRONMENT", "not-set"),
+        "mongo_db": os.getenv("MONGO_DB", "not-set"),
+        "jwt_secret_set": bool(os.getenv("JWT_SECRET_KEY"))
+    }), 200
+
 @app.route("/register", methods=["POST"])
+@db_required
 def register():
     try:
         data = request.get_json()
@@ -176,6 +257,7 @@ def register():
         return jsonify({"error": "Registration failed"}), 500
 
 @app.route("/login", methods=["POST"])
+@db_required
 def login():
     try:
         data = request.get_json()
@@ -209,6 +291,7 @@ def login():
 
 @app.route("/save-profile", methods=["POST"])
 @token_required
+@db_required
 def save_profile():
     try:
         data = request.get_json()
@@ -235,6 +318,7 @@ def save_profile():
 
 @app.route("/get-profile", methods=["GET"])
 @token_required
+@db_required
 def get_profile():
     try:
         # Use user_id from JWT token
@@ -255,6 +339,9 @@ def get_profile():
 def analyze():
     """Image analysis endpoint - enhanced with JWT auth"""
     try:
+        if not gemini_model:
+            return jsonify({"error": "AI service unavailable"}), 503
+            
         if "image" not in request.files:
             return jsonify({"error": "No image part in the request"}), 400
 
@@ -383,6 +470,7 @@ def compress_base64_image(base64_str, quality=5):
 
 @app.route("/save-meal", methods=["POST"])
 @token_required
+@db_required
 def save_meal():
     try:
         data = request.get_json()
@@ -429,6 +517,7 @@ def save_meal():
 
 @app.route("/user-meals", methods=["GET"])
 @token_required
+@db_required
 def get_user_meals():
     try:
         # Use user_id from JWT token
@@ -490,6 +579,7 @@ def get_user_meals():
 
 @app.route("/update-meal", methods=["PUT"])
 @token_required
+@db_required
 def update_meal():
     try:
         data = request.get_json()
@@ -536,6 +626,7 @@ def update_meal():
 
 @app.route("/delete-meal", methods=["DELETE"])
 @token_required
+@db_required
 def delete_meal():
     try:
         data = request.get_json()
@@ -568,6 +659,9 @@ def delete_meal():
 def recalculate_nutrition():
     """Fully dynamic nutrition recalculation endpoint"""
     try:
+        if not gemini_model:
+            return jsonify({"error": "AI service unavailable"}), 503
+            
         data = request.get_json()
         if not data:
             return jsonify({"error": "Empty request"}), 400
@@ -614,6 +708,7 @@ def recalculate_nutrition():
 
 @app.route("/add-exercise", methods=["POST"])
 @token_required
+@db_required
 def add_exercise():
     try:
         data = request.get_json()
@@ -651,6 +746,7 @@ def add_exercise():
 
 @app.route("/user-exercise", methods=["GET"])
 @token_required
+@db_required
 def get_user_exercise():
     try:
         exercises_collection = db["exercise"]
@@ -669,6 +765,7 @@ def get_user_exercise():
 
 @app.route("/add-water", methods=["POST"])
 @token_required
+@db_required
 def add_water():
     try:
         data = request.get_json()
@@ -702,6 +799,7 @@ def add_water():
 
 @app.route("/user-water", methods=["GET"])
 @token_required
+@db_required
 def get_user_water():
     try:
         water_collection = db["water"]
@@ -720,6 +818,7 @@ def get_user_water():
 
 @app.route("/add-weight", methods=["POST"])
 @token_required
+@db_required
 def add_weight():
     try:
         data = request.get_json()
@@ -753,6 +852,7 @@ def add_weight():
 
 @app.route("/user-weight", methods=["GET"])
 @token_required
+@db_required
 def get_user_weight():
     try:
         weight_collection = db["weight"]
@@ -771,6 +871,7 @@ def get_user_weight():
 
 @app.route("/dashboard-stats", methods=["GET"])
 @token_required
+@db_required
 def get_dashboard_stats():
     """Get comprehensive dashboard statistics"""
     try:
@@ -781,7 +882,6 @@ def get_dashboard_stats():
         month_start = today.replace(day=1)
         
         # Initialize collections
-        meals_collection = db["meals"]
         water_collection = db["water"]
         exercise_collection = db["exercise"]
         weight_collection = db["weight"]
@@ -842,6 +942,7 @@ def get_dashboard_stats():
 
 @app.route("/user-insights", methods=["GET"])
 @token_required
+@db_required
 def get_user_insights():
     """Get personalized health insights"""
     try:
@@ -968,4 +1069,6 @@ if __name__ == "__main__":
     print(f"✅ Enhanced with JWT authentication and bcrypt")
     print(f"🔒 Security: JWT tokens + bcrypt passwords")
     print(f"📱 Compatible with Swift frontend")
+    print(f"🗄️ MongoDB: {'✅ Connected' if client else '❌ Not connected'}")
+    print(f"🤖 Gemini AI: {'✅ Ready' if gemini_model else '❌ Not configured'}")
     app.run(host="0.0.0.0", port=port, threaded=True)
