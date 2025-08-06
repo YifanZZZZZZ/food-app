@@ -3,13 +3,17 @@ services:
     name: food-analyzer
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app --workers 2 --threads 4 --timeout 120"
+    startCommand: "gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT --preload"
     envVars:
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false  # You'll add this manually in Render dashboard
       - key: MONGO_URI
-        sync: false
+        sync: false  # You'll add this manually in Render dashboard
       - key: MONGO_DB
         value: food-app-swift
+      - key: JWT_SECRET_KEY
+        value: nutrisnap-super-secret-jwt-key-ax356ax356ax356ax3560000x
+      - key: ENVIRONMENT
+        value: production
     plan: free
     healthCheckPath: /health
