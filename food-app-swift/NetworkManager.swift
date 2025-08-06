@@ -3,7 +3,7 @@ import Foundation
 class NetworkManager {
     static let shared = NetworkManager()
     
-    private let baseURL = "https://food-app-swift.onrender.com" // UPDATE THIS WITH YOUR RENDER URL
+    private let baseURL = "https://food-app-swift-qb4k.onrender.com" // UPDATE THIS WITH YOUR RENDER URL
     
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
