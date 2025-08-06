@@ -346,7 +346,7 @@ struct WaterTrackingView: View {
     func fetchWaterData() {
         guard let userId = getCurrentUserId() else { return }
         
-        guard let url = URL(string: "https://food-app-swift.onrender.com/user-water?user_id=\(userId)") else { return }
+        guard let url = URL(string: "https://food-app-swift-qb4k.onrender.com/user-water?user_id=\(userId)") else { return }
         
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -390,7 +390,7 @@ struct WaterTrackingView: View {
         
         guard let userId = getCurrentUserId() else { return }
         
-        guard let url = URL(string: "https://food-app-swift.onrender.com/add-water") else { return }
+        guard let url = URL(string: "https://food-app-swift-qb4k.onrender.com/add-water") else { return }
         
         isLoading = true
         
